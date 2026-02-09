@@ -1,0 +1,30 @@
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    container_name: labflow-backend
+    environment:
+      - LABFLOW_DRY_RUN=${LABFLOW_DRY_RUN:-true}
+      - LABFLOW_R_EXEC_MODE=${LABFLOW_R_EXEC_MODE:-direct}
+      - LABFLOW_RSCRIPT_BIN=${LABFLOW_RSCRIPT_BIN:-Rscript}
+      - LABFLOW_R_CONDA_ENV=${LABFLOW_R_CONDA_ENV:-}
+      - LABFLOW_R_CONDA_BAT=${LABFLOW_R_CONDA_BAT:-conda.bat}
+    volumes:
+      - ../backend/state:/app/backend/state
+      - ../backend/uploads:/app/backend/uploads
+      - ../backend/artifacts:/app/backend/artifacts
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: frontend/Dockerfile
+    container_name: labflow-frontend
+    environment:
+      - VITE_API_BASE=${VITE_API_BASE:-http://localhost:8000}
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"

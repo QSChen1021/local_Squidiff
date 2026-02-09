@@ -1,0 +1,160 @@
+from __future__ import annotations
+
+import traceback
+from datetime import datetime, timezone
+from queue import Queue
+from threading import Event, Thread
+from typing import Any
+
+from ..core.config import settings
+from ..storage.state_manager import JsonStateStore
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+class JobQueue:
+    def __init__(self, store: JsonStateStore, runner: Any) -> None:
+        self.store = store
+        self.runner = runner
+        self._queue: Queue[str] = Queue()
+        self._stop_event = Event()
+        self._worker: Thread | None = None
+
+    def start(self) -> None:
+        if self._worker and self._worker.is_alive():
+            return
+        self._stop_event.clear()
+        self._worker = Thread(target=self._work_loop, daemon=True)
+        self._worker.start()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        self._queue.put("__STOP__")
+        if self._worker:
+            self._worker.join(timeout=3)
+
+    def enqueue(self, job_id: str) -> None:
+        self._queue.put(job_id)
+
+    def _work_loop(self) -> None:
+        while not self._stop_event.is_set():
+            job_id = self._queue.get()
+            if job_id == "__STOP__":
+                self._queue.task_done()
+                continue
+
+            job = self.store.get_job(job_id)
+            if job is None:
+                self._queue.task_done()
+                continue
+
+            try:
+                self.store.update_job(
+                    job_id,
+                    {"status": "running", "started_at": _now(), "error_msg": None},
+                )
+                if job["type"] == "train":
+                    self._execute_train(job_id, job)
+                elif job["type"] == "predict":
+                    self._execute_predict(job_id, job)
+                else:
+                    raise RuntimeError(f"Unsupported job type: {job['type']}")
+                self.store.update_job(job_id, {"status": "success", "ended_at": _now()})
+            except Exception as exc:  # noqa: BLE001
+                self.store.update_job(
+                    job_id,
+                    {
+                        "status": "failed",
+                        "ended_at": _now(),
+                        "error_msg": f"{exc}\n{traceback.format_exc()}",
+                    },
+                )
+            finally:
+                self._queue.task_done()
+
+    def _execute_train(self, job_id: str, job: dict[str, Any]) -> None:
+        dataset = self.store.get_dataset(job["dataset_id"])
+        if dataset is None:
+            raise RuntimeError(f"Dataset not found: {job['dataset_id']}")
+
+        data_path = dataset.get("path_h5ad") or dataset.get("path_raw")
+        if not data_path:
+            raise RuntimeError(f"No usable data path in dataset {dataset['id']}")
+
+        params = {**job.get("params", {}), "data_path": data_path}
+        control_dataset_id = params.get("control_dataset_id")
+        if control_dataset_id:
+            control_dataset = self.store.get_dataset(control_dataset_id)
+            if control_dataset is None:
+                raise RuntimeError(
+                    f"Control dataset not found: {params['control_dataset_id']}"
+                )
+            params["control_data_path"] = control_dataset.get(
+                "path_h5ad"
+            ) or control_dataset.get("path_raw")
+
+        job_dir = settings.artifact_dir / "jobs" / job_id
+        train_out = self.runner.run_train(job_dir=job_dir, params=params)
+        model_record = self.store.create_model(
+            {
+                "job_id": job_id,
+                "dataset_id": dataset["id"],
+                "path_ckpt": train_out["model_path"],
+                "log_path": train_out["log_path"],
+                "gene_size": params["gene_size"],
+                "output_dim": params["output_dim"],
+                "use_drug_structure": bool(params.get("use_drug_structure", False)),
+                "metrics": train_out.get("metrics", {}),
+            }
+        )
+        self.store.update_job(
+            job_id,
+            {
+                "model_id": model_record["id"],
+                "artifact_dir": str(job_dir),
+                "log_path": train_out["log_path"],
+            },
+        )
+
+    def _execute_predict(self, job_id: str, job: dict[str, Any]) -> None:
+        dataset = self.store.get_dataset(job["dataset_id"])
+        if dataset is None:
+            raise RuntimeError(f"Dataset not found: {job['dataset_id']}")
+
+        data_path = dataset.get("path_h5ad") or dataset.get("path_raw")
+        if not data_path:
+            raise RuntimeError(f"No usable data path in dataset {dataset['id']}")
+
+        params = {**job.get("params", {}), "data_path": data_path}
+        model_id = params.get("model_id")
+        if model_id and not params.get("model_path"):
+            model = self.store.get_model(model_id)
+            if model is None:
+                raise RuntimeError(f"Model not found: {model_id}")
+            params["model_path"] = model["path_ckpt"]
+
+        if not params.get("model_path"):
+            raise RuntimeError("model_path (or model_id) is required for predict job")
+
+        job_dir = settings.artifact_dir / "jobs" / job_id
+        pred_out = self.runner.run_predict(job_dir=job_dir, params=params)
+        result_record = self.store.create_result(
+            {
+                "job_id": job_id,
+                "dataset_id": dataset["id"],
+                "prediction_path": pred_out["prediction_path"],
+                "log_path": pred_out["log_path"],
+                "summary": pred_out.get("summary", {}),
+                "artifact_dir": str(job_dir),
+            }
+        )
+        self.store.update_job(
+            job_id,
+            {
+                "result_id": result_record["id"],
+                "artifact_dir": str(job_dir),
+                "log_path": pred_out["log_path"],
+            },
+        )

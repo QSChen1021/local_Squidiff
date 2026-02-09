@@ -1,0 +1,161 @@
+:root {
+  --bg: #f7f8f5;
+  --fg: #182126;
+  --panel: #ffffff;
+  --line: #d6dee2;
+  --accent: #0f6c82;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  color: var(--fg);
+  background: radial-gradient(circle at top right, #dbe8ea 0%, var(--bg) 45%);
+}
+
+.app-shell {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 2rem 1rem 3rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.hero h1 {
+  margin: 0;
+}
+
+.hero p {
+  margin: 0.35rem 0 0;
+  color: #324046;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+}
+
+.panel h2 {
+  margin-top: 0;
+}
+
+.panel h3 {
+  margin: 0;
+}
+
+.status {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.error {
+  color: #a11d22;
+}
+
+.form-grid {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-bottom: 0.8rem;
+}
+
+.form-grid.compact {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+label {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.92rem;
+}
+
+input[type="text"],
+input[type="number"],
+select,
+input:not([type]) {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.45rem 0.5rem;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+button {
+  border: 1px solid #0e5f73;
+  background: #0f6c82;
+  color: #fff;
+  border-radius: 8px;
+  padding: 0.45rem 0.9rem;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.kv {
+  margin-top: 0.8rem;
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 0.3rem 0.5rem;
+}
+
+code {
+  background: #eef3f5;
+  border-radius: 6px;
+  padding: 0.12rem 0.3rem;
+}
+
+.path {
+  overflow-wrap: anywhere;
+}
+
+.stack {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.error-list {
+  color: #a11d22;
+}
+
+.log {
+  white-space: pre-wrap;
+  max-height: 260px;
+  overflow: auto;
+  background: #141a1f;
+  color: #d6e2e8;
+  border-radius: 10px;
+  padding: 0.8rem;
+  margin: 0;
+}
+
+.asset-grid {
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.asset-card {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.5rem;
+  background: #fbfcfa;
+}
+
+.asset-card img {
+  width: 100%;
+  border-radius: 8px;
+}
