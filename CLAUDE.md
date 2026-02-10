@@ -165,6 +165,7 @@ python scripts/uat_phase4_seurat_v2.py --help
 ## 10. 文档索引
 
 - 总览：`README.md`
+- 模型能做什么与前端设计理念：`docs/模型能做什么与前端设计理念.md`
 - 部署：`docs/部署文档.md`
 - Seurat 转换：`docs/seurat转换指南.md`
 - Seurat API：`docs/api/seurat.md`

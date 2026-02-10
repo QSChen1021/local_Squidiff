@@ -5,16 +5,39 @@
 
 ---
 
-## 1. 项目功能总览
+## 1. 项目目标与面向用户
 
-### 1.1 研究模型能力（根目录脚本）
+### 项目在解决什么问题？
+
+Squidiff 是一个**用扩散模型预测单细胞转录组变化**的工具（见 [Nature Methods 论文](https://doi.org/10.1038/s41592-025-02877-y)）。通俗说：
+
+- **训练前**：你提供单细胞数据（如 Seurat / h5ad）以及“条件”（例如不同时间点、不同药物/剂量），系统学会“在这种条件下，细胞转录组会变成什么样”。
+- **训练后**：用训练好的模型对**新样本、新条件**做**预测**，得到“模型认为的转录组”以及 UMAP、热图等结果，用来做**计算机里的虚拟实验（in silico）**，减少重复湿实验、快速筛条件、辅助发文章。
+
+典型用途包括：**细胞分化轨迹**、**基因扰动**、**药物响应预测**等（与论文中的验证场景一致）。  
+更细的“模型能做什么”和设计理念见：`docs/模型能做什么与前端设计理念.md`。
+
+### 产品最终给谁用？
+
+**LabFlow 网页端优先面向不会写代码、不搞生信的生命科学研究者**（硕博、博后、PI 等）。目标是：
+
+- 在**不敲命令、不配环境**的前提下，通过上传数据、点选参数、查看结果，完成“数据 → 训练 → 用模型做预测 → 看图/下载”的全流程。
+- 界面和文案要让人一眼看懂：自己在做的是“用 Squidiff 预测转录组”，而不是抽象的“跑一个 AI 模型”。
+
+命令行脚本（`train_squidiff.py` / `sample_squidiff.py`）仍保留给会编程或生信的同学做复现与扩展；但**产品形态与文档以“外行友好”为第一目标**。
+
+---
+
+## 2. 项目功能总览
+
+### 2.1 研究模型能力（根目录脚本）
 - 基于扩散模型的单细胞转录组预测。
 - 支持基础模式与药物结构模式（`SMILES + dose`）。
 - 入口脚本：
   - `train_squidiff.py`
   - `sample_squidiff.py`
 
-### 1.2 LabFlow Web 能力（`backend/` + `frontend/`）
+### 2.2 LabFlow Web 能力（`backend/` + `frontend/`）
 - 数据上传与格式校验（支持 `.h5ad/.rds/.h5seurat`）。
 - Seurat 检查（metadata 字段 + UMAP 预览）。
 - 训练前预处理（Phase 2）：
@@ -28,7 +51,7 @@
 
 ---
 
-## 2. 当前架构（前后端 + 任务执行）
+## 3. 当前架构（前后端 + 任务执行）
 
 ```text
 Frontend (React/Vite)
@@ -51,7 +74,7 @@ JobQueue worker
 SquidiffRunner -> train_squidiff.py / sample_squidiff.py
 ```
 
-### 2.1 后端核心目录
+### 3.1 后端核心目录
 - `backend/app/api/`：REST API 路由。
 - `backend/app/services/`：业务服务层（转换、检查、预处理、任务执行）。
 - `backend/app/storage/state_manager.py`：文件型状态存储。
@@ -59,19 +82,19 @@ SquidiffRunner -> train_squidiff.py / sample_squidiff.py
 - `backend/uploads/`：上传与预处理输出。
 - `backend/artifacts/`：训练/预测任务产物与日志。
 
-### 2.2 前端核心目录
+### 3.2 前端核心目录
 - `frontend/src/App.tsx`：单页流程 UI（上传 -> 校验 -> inspect -> prepare -> train -> 结果）。
 - `frontend/src/services/api.ts`：API 类型与请求封装。
 - `frontend/src/styles/tokens.css`：样式 token 与页面样式。
 
 ---
 
-## 3. API 概览
+## 4. API 概览
 
-### 3.1 健康检查
+### 4.1 健康检查
 - `GET /api/health`
 
-### 3.2 数据集
+### 4.2 数据集
 - `GET /api/datasets`
 - `POST /api/datasets/upload`
 - `POST /api/datasets/{dataset_id}/validate`
@@ -212,6 +235,7 @@ python scripts/uat_phase4_seurat_v2.py \
 
 ## 8. 文档导航
 
+- **模型能做什么与前端设计理念**：`docs/模型能做什么与前端设计理念.md`（论文依据、训练前后能力、前端根本目标与设计原则）
 - 部署与环境：`docs/部署文档.md`
 - Seurat 转换（含 V2 补充）：`docs/seurat转换指南.md`
 - Seurat API：`docs/api/seurat.md`
