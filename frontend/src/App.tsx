@@ -192,7 +192,20 @@ export function App() {
         setOutputDim(payload.validation.summary.n_genes);
       }
     } catch (err: unknown) {
-      setGlobalError(err instanceof Error ? err.message : String(err));
+      const raw = err instanceof Error ? err.message : String(err);
+      let msg = raw;
+      try {
+        const parsed = JSON.parse(raw) as { detail?: string };
+        if (typeof parsed.detail === "string") {
+          msg = parsed.detail;
+          if (/Rscript|cmd_conda|Conda/i.test(parsed.detail)) {
+            msg += " → 请将「R 执行方式」改为 cmd_conda，并填写 conda.bat 完整路径和 R 环境名。";
+          }
+        }
+      } catch {
+        // not JSON, keep raw
+      }
+      setGlobalError(msg);
     } finally {
       setBusyStep(null);
     }
@@ -358,6 +371,9 @@ export function App() {
 
       <section className="panel">
         <h2>2) 校验</h2>
+        <p className="hint">
+          若 R 通过 Conda 安装（如 Windows），请选择 <strong>cmd_conda</strong>，并填写 conda.bat 的<strong>完整路径</strong>（如 F:\software\Miniconda3\condabin\conda.bat）和 R 环境名（如 r-4.3）。
+        </p>
         <div className="form-grid compact">
           <label>
             R 执行方式

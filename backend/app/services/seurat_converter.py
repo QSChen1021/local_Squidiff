@@ -55,7 +55,9 @@ def _build_r_command(
     if shutil.which(rscript) is None and not Path(rscript).exists():
         raise RuntimeError(
             "Rscript was not found. Please install R and ensure Rscript is in PATH, "
-            "or set LABFLOW_RSCRIPT_BIN / rscript_bin to the full path."
+            "or set LABFLOW_RSCRIPT_BIN / rscript_bin to the full path. "
+            "若 R 安装在 Conda 环境中（如 Windows），请将「R 执行方式」改为 cmd_conda，"
+            "并填写 conda.bat 的完整路径（如 F:\\software\\Miniconda3\\condabin\\conda.bat）与 Conda R 环境名（如 r-4.3）。"
         )
 
     return [

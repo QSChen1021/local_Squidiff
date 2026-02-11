@@ -58,6 +58,12 @@ body {
   color: #a11d22;
 }
 
+.hint {
+  font-size: 0.9rem;
+  color: var(--muted, #666);
+  margin-bottom: 0.75rem;
+}
+
 .form-grid {
   display: grid;
   gap: 0.8rem;
