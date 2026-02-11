@@ -45,6 +45,7 @@
 - **真实训练 vs dry_run**：后端设置 `LABFLOW_DRY_RUN=true` 时，训练不执行（只写占位 `model.pt`），预测用随机矩阵，图会正常生成。要得到真实训练出的模型，需**不设或关闭** `LABFLOW_DRY_RUN` 后重启后端再跑全流程；真实模型在 `backend/artifacts/jobs/<train_job_id>/checkpoints/` 下。
 - **训练失败 ModuleNotFoundError: rdkit**：当 `use_drug_structure=False` 时，Squidiff 不需 rdkit。已在 `Squidiff/scrna_datasets.py` 中将 rdkit 改为在 `Drug_dose_encoder` 内按需导入，避免无药物结构时因缺 rdkit 导致训练启动失败。训练失败时后端会在 job 的 error_msg 及 train.log 中保留子进程 stderr 末尾，便于排查。
 - **训练 use_drug_structure 被误传为 True**：runner 原先传 `--use_drug_structure str(False)` 即 `"False"`，argparse 解析为 True，导致脚本去读空的 control_data_path 报 OSError。已改为仅当 `params["use_drug_structure"]` 为真时才追加 `--use_drug_structure True` 与 `--control_data_path`，否则不传，使用 train_squidiff 默认 False。失败时若子进程无 stderr/stdout，则从已写入的 train.log 读末尾作为错误详情。
+- **训练轮询超时但显卡仍在跑**：脚本原为固定 3600s 超时，训练超过 1 小时即报错，而 GPU 仍在训练。已在全流程脚本中增加「超时后多侧面判断」：(1) nvidia-smi 查 GPU 利用率，高于阈值则延长；(2) nvidia-smi 进程列表（--query-compute-apps 或 -q 解析）中若存在名称含 python 的进程，也视为训练可能仍在跑并延长。任一满足即延长等待（每次 30 分钟，总上限 4 小时）。环境变量：LABFLOW_TRAIN_GPU_BUSY_THRESHOLD、LABFLOW_TRAIN_EXTEND_SEC、LABFLOW_TRAIN_MAX_TOTAL_SEC。
 
 ## Context Network
 - File layout

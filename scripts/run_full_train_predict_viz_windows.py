@@ -7,6 +7,10 @@
 - 若仅验证流程：后端设置 LABFLOW_DRY_RUN=true，则训练不执行（只写占位 model.pt），预测用随机矩阵，但可视化图会正常生成。
 - 若需真实训练与真实模型：后端不要设置 LABFLOW_DRY_RUN（或设为 false），再跑本脚本；训练会调用 train_squidiff.py，模型落在 backend/artifacts/jobs/<train_job_id>/checkpoints/ 下。
 
+- 训练轮询：首轮等待 TRAIN_POLL_TIMEOUT_SEC（默认 3600s）；若超时则从两个侧面判断是否延长：
+  (1) GPU 利用率高于阈值 (2) nvidia-smi 进程列表中是否有名称含 python 的进程。任一满足则自动延长等待
+  （默认每次 30 分钟，总时长上限 4 小时）。需本机有 nvidia-smi。环境变量：LABFLOW_TRAIN_GPU_BUSY_THRESHOLD、LABFLOW_TRAIN_EXTEND_SEC、LABFLOW_TRAIN_MAX_TOTAL_SEC。
+
 故障排除：
 - 端口被占用：若 8000 已被占用，可改在其它端口启动后端（如 8002），
   并设置 LABFLOW_BASE_URL=http://127.0.0.1:8002 再运行本脚本。
@@ -18,6 +22,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -36,6 +42,10 @@ DEFAULT_R_CONDA_BAT = os.getenv(
 POLL_INTERVAL_SEC = 5
 TRAIN_POLL_TIMEOUT_SEC = 3600
 PREDICT_POLL_TIMEOUT_SEC = 600
+# 训练超时后若 GPU 仍忙则自动延长的参数
+TRAIN_GPU_BUSY_THRESHOLD = int(os.getenv("LABFLOW_TRAIN_GPU_BUSY_THRESHOLD", "10"))
+TRAIN_EXTEND_SEC = int(os.getenv("LABFLOW_TRAIN_EXTEND_SEC", "1800"))
+TRAIN_MAX_TOTAL_SEC = int(os.getenv("LABFLOW_TRAIN_MAX_TOTAL_SEC", "14400"))
 
 
 def request_json(
@@ -93,15 +103,147 @@ def _infer_group_and_cluster_columns(h5ad_path: Path) -> tuple[str, str, list[st
     return group_column, cluster_column, selected
 
 
+def get_gpu_utilization() -> float | None:
+    """当前 GPU 利用率 0–100，无法获取时返回 None（无 nvidia-smi 或非 NVIDIA）。"""
+    try:
+        out = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=utilization.gpu",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if out.returncode != 0 or not out.stdout:
+            return None
+        line = out.stdout.strip().split("\n")[0].strip()
+        match = re.search(r"\d+", line)
+        return float(match.group(0)) if match else None
+    except (FileNotFoundError, subprocess.TimeoutExpired, ValueError):
+        return None
+
+
+def get_gpu_process_names() -> list[str]:
+    """当前占用 GPU 的进程名列表（用于判断是否有 Python/训练进程在跑）。"""
+    names: list[str] = []
+    try:
+        out = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-compute-apps=process_name",
+                "--format=csv,noheader",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if out.returncode == 0 and out.stdout:
+            for line in out.stdout.strip().split("\n"):
+                name = line.strip().strip('"').strip()
+                if name:
+                    names.append(name)
+            if names:
+                return names
+        # 部分驱动/WDDM 下 --query-compute-apps 可能为空，用 -q 输出解析
+        qout = subprocess.run(
+            ["nvidia-smi", "-q"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if qout.returncode != 0 or not qout.stdout:
+            return names
+        # 解析 "Process name" 行
+        for line in qout.stdout.split("\n"):
+            if "Process name" in line:
+                parts = line.split(":", 1)
+                if len(parts) == 2 and parts[1].strip():
+                    names.append(parts[1].strip())
+        return names
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return []
+
+
+def is_python_process_on_gpu() -> bool:
+    """GPU 上是否有名称含 python 的进程（训练多为 python 进程）。"""
+    for name in get_gpu_process_names():
+        if "python" in name.lower():
+            return True
+    return False
+
+
 def poll_job_until_done(
     base_url: str,
     job_id: str,
     poll_interval_sec: int,
     max_wait_sec: int,
     timeout_sec: int = 60,
+    *,
+    extend_on_gpu_busy: bool = False,
+    gpu_busy_threshold: int = 10,
+    extend_sec: int = 1800,
+    max_total_sec: int = 14400,
 ) -> dict:
     deadline = time.time() + max_wait_sec
-    while time.time() <= deadline:
+    started = time.time()
+    status = "running"
+    while True:
+        if time.time() > deadline:
+            if not extend_on_gpu_busy:
+                payload = request_json(
+                    base_url, "GET", f"/api/jobs/{job_id}", timeout_sec=timeout_sec
+                )
+                job = payload.get("job", {})
+                status = str(job.get("status", ""))
+                if status in ("success", "failed"):
+                    return job
+                raise RuntimeError(
+                    f"Job {job_id} 未在 {max_wait_sec}s 内完成，当前 status={status}"
+                )
+            if time.time() - started >= max_total_sec:
+                payload = request_json(
+                    base_url, "GET", f"/api/jobs/{job_id}", timeout_sec=timeout_sec
+                )
+                job = payload.get("job", {})
+                status = str(job.get("status", ""))
+                if status in ("success", "failed"):
+                    return job
+                raise RuntimeError(
+                    f"Job {job_id} 在 {max_total_sec}s 总时长内未完成，当前 status={status}"
+                )
+            util = get_gpu_utilization()
+            python_on_gpu = is_python_process_on_gpu()
+            extend = (util is not None and util > gpu_busy_threshold) or python_on_gpu
+            if extend:
+                deadline += extend_sec
+                deadline = min(deadline, started + max_total_sec)
+                parts = []
+                if util is not None and util > gpu_busy_threshold:
+                    parts.append(f"GPU 利用率 {util:.0f}%")
+                if python_on_gpu:
+                    parts.append("检测到 Python 进程占用 GPU")
+                print(
+                    f"    [{' | '.join(parts)}] 延长等待 {extend_sec}s，继续轮询…"
+                )
+            else:
+                payload = request_json(
+                    base_url, "GET", f"/api/jobs/{job_id}", timeout_sec=timeout_sec
+                )
+                job = payload.get("job", {})
+                status = str(job.get("status", ""))
+                if status in ("success", "failed"):
+                    return job
+                reason = []
+                if util is not None:
+                    reason.append(f"GPU 利用率 {util}%")
+                if not python_on_gpu:
+                    reason.append("未检测到 Python 进程占用 GPU")
+                raise RuntimeError(
+                    f"Job {job_id} 未在 {max_wait_sec}s 内完成，当前 status={status}"
+                    + (f"（{', '.join(reason)}）" if reason else "")
+                )
         payload = request_json(
             base_url, "GET", f"/api/jobs/{job_id}", timeout_sec=timeout_sec
         )
@@ -110,9 +252,6 @@ def poll_job_until_done(
         if status in ("success", "failed"):
             return job
         time.sleep(poll_interval_sec)
-    raise RuntimeError(
-        f"Job {job_id} 未在 {max_wait_sec}s 内完成，当前 status={status}"
-    )
 
 
 def download_asset(
@@ -220,9 +359,18 @@ def main() -> None:
         base_url, "POST", "/api/jobs/train", payload=train_payload, timeout_sec=60
     )
     train_job_id = train_resp["job"]["id"]
-    print(f"[3] 训练任务已提交: job_id={train_job_id}，轮询直至完成…")
+    print(
+        f"[3] 训练任务已提交: job_id={train_job_id}，轮询直至完成（超时后若 GPU 仍忙会自动延长）…"
+    )
     train_job = poll_job_until_done(
-        base_url, train_job_id, POLL_INTERVAL_SEC, TRAIN_POLL_TIMEOUT_SEC
+        base_url,
+        train_job_id,
+        POLL_INTERVAL_SEC,
+        TRAIN_POLL_TIMEOUT_SEC,
+        extend_on_gpu_busy=True,
+        gpu_busy_threshold=TRAIN_GPU_BUSY_THRESHOLD,
+        extend_sec=TRAIN_EXTEND_SEC,
+        max_total_sec=TRAIN_MAX_TOTAL_SEC,
     )
     if train_job.get("status") != "success":
         print(f"    训练失败: {train_job.get('error_msg')}")
