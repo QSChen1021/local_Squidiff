@@ -59,7 +59,8 @@
 ## 4. 运行与部署上下文
 
 ### 4.1 本地开发（默认）
-- Backend: `uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000`
+- 环境：uv / conda / 本机 Python 三选一（见 `docs/部署文档.md`）
+- Backend: `python -m uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000`
 - Frontend: `cd frontend && npm run dev`
 
 ### 4.2 Docker 部署

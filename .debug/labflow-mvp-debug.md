@@ -407,6 +407,10 @@
 ### [2026-02-11] Black 格式化与 Checkfix
 - 用户已通过 `python -m black` 成功执行 black（PATH 已含 Python313\Scripts 或使用 python -m）。先对 `backend`、`scripts` 格式化 6 个文件；后对**全项目**执行 `python -m black .`，再格式化 Squidiff/ 与根目录共 14 个文件（dist_util.py、nn.py、respace.py、scrna_datasets.py、sample_squidiff.py、resample.py、Squidiff/train_squidiff.py、train_squidiff.py、MLPModel.py、fp16_util.py、logger.py、script_util.py、train_util.py、diffusion.py）。当前 `python -m black --check .` 与 `ruff check .` 均通过（45 files unchanged）。
 
+### [2026-02-11] README 与部署文档精简（开发/部署只保留 uv、conda、python）
+- 用户要求：开发部署只保留 uv、conda、直接 python，不整 uvicorn 等额外负担，和部署文档一起修干净。
+- 修改：README 第 5 节改为「开发与部署（三种方式）」：5.1 环境准备仅列 uv / conda / 本机 Python 三选一；5.2 后端启动统一为 `python -m uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000`；5.3 前端；5.4 Docker 一笔带过。部署文档：安装流程合并为 3.1 uv、3.2 conda、3.3 本机 Python、3.4 国内镜像；新增 5. 启动 LabFlow Web（一条后端命令 + 前端）；原 5–9 节顺延为 6–10。CLAUDE.md、AGENTS.md、backend/README.md 同步为「环境三选一 + python -m uvicorn」。
+
 ## Open Issues
 - Real-world Seurat conversion relies on local R/SeuratDisk availability.
 - Production auth is intentionally simplified for MVP.

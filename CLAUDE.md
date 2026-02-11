@@ -107,17 +107,16 @@
 
 ## 7. 本地开发运行
 
+环境三选一：uv / conda / 本机 Python（venv + pip），见 `docs/部署文档.md`。依赖装好后在项目根目录执行：
+
 ### 7.1 后端
 ```bash
-pip install -r requirements.txt -r backend/requirements.txt
-uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ### 7.2 前端
 ```bash
-cd frontend
-npm install
-npm run dev
+cd frontend && npm install && npm run dev
 ```
 
 ---

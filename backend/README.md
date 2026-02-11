@@ -2,9 +2,10 @@
 
 ## Run locally
 
+在项目根目录、已激活环境（uv / conda / venv 任选）下执行，依赖见根目录 `requirements.txt` 与 `backend/requirements.txt`：
+
 ```bash
-pip install -r requirements.txt -r backend/requirements.txt
-uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ## Health check

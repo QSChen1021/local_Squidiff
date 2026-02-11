@@ -123,55 +123,83 @@ SquidiffRunner -> train_squidiff.py / sample_squidiff.py
 
 ---
 
-## 5. 本地开发启动（推荐）
+## 5. 开发与部署（三种方式）
 
-### 5.1 环境要求
-- Python 3.11（推荐）
-- Node.js 20+
-- R + SeuratDisk（仅 `.rds/.h5seurat -> h5ad` 转换需要）
+环境三选一即可：**uv**、**conda**、或**本机 Python**（venv + pip）。下面命令按 **Windows** 和 **Linux / macOS** 分开写，复制时只复制你当前系统对应的那一行或一段即可。R + SeuratDisk 仅在需要 `.rds/.h5seurat → h5ad` 转换时安装；前端需 Node.js 20+。
 
-### 5.2 后端启动
+### 5.1 环境准备（任选其一）
+
+**uv（推荐）**
 
 ```bash
-pip install -r requirements.txt -r backend/requirements.txt
-uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
+# Windows（在 PowerShell 或 CMD 中执行）
+uv venv
+.venv\Scripts\activate
+uv pip install -r requirements.txt -r backend/requirements.txt
+
+# Linux / macOS（在终端中执行）
+uv venv
+source .venv/bin/activate
+uv pip install -r requirements.txt -r backend/requirements.txt
 ```
 
-### 5.3 前端启动
+**conda**
 
 ```bash
+# Windows 与 Linux / macOS 相同
+conda create -n labflow python=3.11
+conda activate labflow
+pip install -r requirements.txt -r backend/requirements.txt
+```
+
+**本机 Python（venv + pip）**
+
+```bash
+# Windows
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt -r backend/requirements.txt
+
+# Linux / macOS
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt -r backend/requirements.txt
+```
+
+### 5.2 启动后端
+
+在项目根目录、已激活环境中执行（Windows 与 Linux / macOS 命令相同）：
+
+```bash
+python -m uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### 5.3 启动前端
+
+```bash
+# Windows（PowerShell 或 CMD）
+cd frontend
+npm install
+npm run dev
+
+# Linux / macOS
 cd frontend
 npm install
 npm run dev
 ```
 
-默认访问：
-- Frontend: `http://localhost:5173`
-- Backend: `http://localhost:8000`
+（若习惯一行执行：Linux/mac 与 Windows CMD 用 `cd frontend && npm install && npm run dev`；Windows PowerShell 用 `cd frontend; npm install; npm run dev`。）
 
----
+- 前端：`http://localhost:5173`
+- 后端：`http://localhost:8000`
 
-## 6. Docker 部署（内网快速拉起）
-
-配置文件：`infra/docker-compose.yml`  
-示例环境变量：`infra/.env.example`
+### 5.4 Docker（内网一键）
 
 ```bash
-cd infra
-cp .env.example .env
-docker compose up --build
+cd infra && cp .env.example .env && docker compose up --build
 ```
 
-### 6.1 关键环境变量
-
-| 变量 | 说明 | 默认值 |
-|---|---|---|
-| `LABFLOW_DRY_RUN` | 后端是否走轻量 dry-run | `true` |
-| `LABFLOW_R_EXEC_MODE` | R 执行模式（`direct`/`cmd_conda`） | `direct` |
-| `LABFLOW_RSCRIPT_BIN` | Rscript 命令 | `Rscript` |
-| `LABFLOW_R_CONDA_ENV` | `cmd_conda` 下的 Conda 环境名 | 空 |
-| `LABFLOW_R_CONDA_BAT` | `conda.bat` 路径 | `conda.bat` |
-| `VITE_API_BASE` | 前端请求后端地址 | `http://localhost:8000` |
+环境变量说明见 `infra/.env.example`，部署细节见 `docs/部署文档.md`。
 
 ---
 
