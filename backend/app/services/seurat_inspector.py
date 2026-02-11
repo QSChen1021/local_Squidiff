@@ -68,8 +68,18 @@ def inspect_h5ad(data_path: Path, umap_preview_limit: int = 1500) -> dict[str, o
     obs = getattr(adata, "obs", None)
 
     metadata_columns: list[str] = []
+    metadata_column_values: dict[str, list[str]] = {}
     if obs is not None and hasattr(obs, "columns"):
         metadata_columns = sorted(str(name) for name in obs.columns.tolist())
+        max_values_per_column = 200
+        for col in metadata_columns:
+            try:
+                series = obs[col]
+                uniq = series.astype(str).dropna().unique().tolist()
+                uniq = sorted(set(uniq))[:max_values_per_column]
+                metadata_column_values[col] = uniq
+            except Exception:  # noqa: BLE001
+                metadata_column_values[col] = []
 
     n_cells = int(getattr(adata, "n_obs", 0))
     n_genes = int(getattr(adata, "n_vars", 0))
@@ -115,6 +125,7 @@ def inspect_h5ad(data_path: Path, umap_preview_limit: int = 1500) -> dict[str, o
         "n_cells": n_cells,
         "n_genes": n_genes,
         "metadata_columns": metadata_columns,
+        "metadata_column_values": metadata_column_values,
         "has_umap": umap_payload is not None,
         "umap": umap_payload,
         "warnings": warnings,

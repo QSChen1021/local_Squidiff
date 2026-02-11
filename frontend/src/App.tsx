@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import { ParamTooltip, PARAM_TOOLTIPS } from "./components/ParamTooltip";
 import {
   buildApiUrl,
   createTrainJob,
   DatasetRecord,
+  getCondaEnvs,
   getHealth,
   getJob,
   getJobLog,
@@ -55,6 +57,9 @@ export function App() {
   const [rCondaEnv, setRCondaEnv] = useState("");
   const [rCondaBat, setRCondaBat] = useState("conda.bat");
   const [rscriptBin, setRscriptBin] = useState("Rscript");
+  const [validateError, setValidateError] = useState<string | null>(null);
+  const [condaBatCandidates, setCondaBatCandidates] = useState<string[]>([]);
+  const [condaEnvsList, setCondaEnvsList] = useState<string[]>([]);
 
   const [geneSize, setGeneSize] = useState<number>(100);
   const [outputDim, setOutputDim] = useState<number>(100);
@@ -63,10 +68,12 @@ export function App() {
 
   const [job, setJob] = useState<JobRecord | null>(null);
   const [jobLog, setJobLog] = useState<string>("");
+  const [liveJobLog, setLiveJobLog] = useState<string>("");
   const [model, setModel] = useState<ModelRecord | null>(null);
   const [result, setResult] = useState<ResultRecord | null>(null);
 
   const [busyStep, setBusyStep] = useState<string | null>(null);
+  const [selectedMetadataColumn, setSelectedMetadataColumn] = useState<string | null>(null);
 
   useEffect(() => {
     getHealth()
@@ -75,6 +82,26 @@ export function App() {
         setHealth("down");
         setGlobalError(err instanceof Error ? err.message : String(err));
       });
+  }, []);
+
+  useEffect(() => {
+    getCondaEnvs()
+      .then((res) => {
+        setCondaBatCandidates(res.conda_bat_candidates);
+        setCondaEnvsList(res.conda_envs);
+        if (res.conda_bat_candidates.length > 0) {
+          setRCondaBat((prev) =>
+            prev === "conda.bat" || !res.conda_bat_candidates.includes(prev)
+              ? res.conda_bat_candidates[0]
+              : prev
+          );
+        }
+        const rEnv = res.conda_envs.find((e) => /^r[-.]?\d|r-seurat/i.test(e));
+        if (rEnv) {
+          setRCondaEnv((prev) => (prev === "" ? rEnv : prev));
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const canValidate = useMemo(() => dataset !== null, [dataset]);
@@ -113,13 +140,35 @@ export function App() {
     return () => window.clearTimeout(timer);
   }, [job]);
 
+  // 训练/任务运行中时轮询运行日志，实现「小电视」实时反馈
+  useEffect(() => {
+    if (job == null || (job.status !== "queued" && job.status !== "running")) {
+      return;
+    }
+    const jobId = job.id;
+    const tick = () => {
+      getJobLog(jobId)
+        .then(setLiveJobLog)
+        .catch(() => setLiveJobLog("（获取日志失败）"));
+    };
+    tick();
+    const interval = window.setInterval(tick, 2500);
+    return () => window.clearInterval(interval);
+  }, [job]);
+
   useEffect(() => {
     if (job?.status !== "success" && job?.status !== "failed") {
       return;
     }
     getJobLog(job.id)
-      .then(setJobLog)
-      .catch(() => setJobLog("No log available"));
+      .then((log) => {
+        setJobLog(log);
+        setLiveJobLog(log);
+      })
+      .catch(() => {
+        setJobLog("No log available");
+        setLiveJobLog("");
+      });
 
     if (job.model_id) {
       getModel(job.model_id)
@@ -158,6 +207,7 @@ export function App() {
       setModel(null);
       setResult(null);
       setJobLog("");
+      setLiveJobLog("");
     } catch (err: unknown) {
       setGlobalError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -167,14 +217,15 @@ export function App() {
 
   async function onValidate() {
     if (!dataset) {
-      setGlobalError("请先上传数据");
+      setValidateError("请先上传数据");
       return;
     }
     if (rExecMode === "cmd_conda" && !rCondaEnv.trim()) {
-      setGlobalError("请选择 cmd_conda 时必须填写 Conda R 环境名");
+      setValidateError("请选择 cmd_conda 时必须填写 Conda R 环境名");
       return;
     }
     setBusyStep("validate");
+    setValidateError(null);
     setGlobalError(null);
     try {
       const payload = await validateDataset({
@@ -187,6 +238,7 @@ export function App() {
       });
       setDataset(payload.dataset);
       setValidation(payload.validation);
+      setValidateError(null);
       if (payload.validation.summary?.n_genes) {
         setGeneSize(payload.validation.summary.n_genes);
         setOutputDim(payload.validation.summary.n_genes);
@@ -198,18 +250,20 @@ export function App() {
         const parsed = JSON.parse(raw) as { detail?: string };
         if (typeof parsed.detail === "string") {
           msg = parsed.detail;
-          if (/Rscript|cmd_conda|Conda/i.test(parsed.detail)) {
-            msg += " → 请将「R 执行方式」改为 cmd_conda，并填写 conda.bat 完整路径和 R 环境名。";
-          }
         }
       } catch {
         // not JSON, keep raw
       }
-      setGlobalError(msg);
+      setValidateError(msg);
     } finally {
       setBusyStep(null);
     }
   }
+
+  const validateRecommendation =
+    validateError && /Rscript|cmd_conda|Conda|conda\.bat/i.test(validateError)
+      ? "推荐：R 执行方式选 cmd_conda，conda.bat 填完整路径（如 F:\\software\\Miniconda3\\condabin\\conda.bat），Conda R 环境名填 r-4.3"
+      : null;
 
   async function onInspectSeurat() {
     if (!dataset) {
@@ -300,12 +354,29 @@ export function App() {
       setModel(null);
       setResult(null);
       setJobLog("");
+      setLiveJobLog("");
     } catch (err: unknown) {
       setGlobalError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusyStep(null);
     }
   }
+
+  const taskLabelMap: Record<string, string> = {
+    upload: "上传中…",
+    validate: "校验中…",
+    inspect: "解析 Seurat 中…",
+    prepare: "500×500 预处理中…",
+    train: "提交训练中…"
+  };
+  const isJobRunning =
+    job != null && (job.status === "queued" || job.status === "running");
+  const showTaskFeedback = busyStep !== null || isJobRunning;
+  const taskLabel = busyStep
+    ? taskLabelMap[busyStep] ?? "处理中…"
+    : isJobRunning
+      ? "训练运行中…"
+      : "";
 
   return (
     <main className="app-shell">
@@ -320,11 +391,18 @@ export function App() {
         {globalError ? <p className="error">{globalError}</p> : null}
       </section>
 
+      {showTaskFeedback ? (
+        <section className="panel task-feedback" aria-live="polite">
+          <div className="task-progress" role="progressbar" aria-valuetext={taskLabel} />
+          <p className="task-label">{taskLabel}</p>
+        </section>
+      ) : null}
+
       <section className="panel">
         <h2>1) 上传数据</h2>
         <div className="form-grid">
           <label>
-            数据名称
+            数据名称 <ParamTooltip text={PARAM_TOOLTIPS["数据名称"]} />
             <input
               value={datasetName}
               onChange={(e) => setDatasetName(e.target.value)}
@@ -332,7 +410,7 @@ export function App() {
             />
           </label>
           <label>
-            主数据文件（h5ad/rds/h5seurat）
+            主数据文件（h5ad/rds/h5seurat） <ParamTooltip text={PARAM_TOOLTIPS["主数据文件"]} />
             <input
               type="file"
               accept=".h5ad,.rds,.h5seurat"
@@ -340,7 +418,7 @@ export function App() {
             />
           </label>
           <label>
-            SMILES CSV（可选）
+            SMILES CSV（可选） <ParamTooltip text={PARAM_TOOLTIPS["SMILES CSV"]} />
             <input
               type="file"
               accept=".csv,.tsv,.txt"
@@ -353,7 +431,7 @@ export function App() {
               checked={useDrugStructure}
               onChange={(e) => setUseDrugStructure(e.target.checked)}
             />
-            使用药物结构模式（需要 SMILES + dose 字段）
+            使用药物结构模式（需要 SMILES + dose 字段） <ParamTooltip text={PARAM_TOOLTIPS["使用药物结构模式"]} />
           </label>
         </div>
         <button disabled={busyStep !== null} onClick={onUpload}>
@@ -376,43 +454,124 @@ export function App() {
         </p>
         <div className="form-grid compact">
           <label>
-            R 执行方式
+            R 执行方式 <ParamTooltip text={PARAM_TOOLTIPS["R 执行方式"]} />
             <select
               value={rExecMode}
-              onChange={(e) => setRExecMode(e.target.value as "direct" | "cmd_conda")}
+              onChange={(e) => {
+                setRExecMode(e.target.value as "direct" | "cmd_conda");
+                setValidateError(null);
+              }}
             >
               <option value="direct">direct (直接调用 Rscript)</option>
               <option value="cmd_conda">cmd_conda (cmd + conda activate)</option>
             </select>
           </label>
           <label>
-            Rscript 命令
+            Rscript 命令 <ParamTooltip text={PARAM_TOOLTIPS["Rscript 命令"]} />
             <input
               value={rscriptBin}
-              onChange={(e) => setRscriptBin(e.target.value)}
+              onChange={(e) => {
+                setRscriptBin(e.target.value);
+                setValidateError(null);
+              }}
               placeholder="Rscript"
             />
           </label>
           <label>
-            conda.bat 路径
-            <input
-              value={rCondaBat}
-              onChange={(e) => setRCondaBat(e.target.value)}
-              placeholder="conda.bat 或完整路径"
-            />
+            conda.bat 路径 <ParamTooltip text={PARAM_TOOLTIPS["conda.bat 路径"]} />
+            {condaBatCandidates.length > 0 ? (
+              <>
+                <select
+                  value={
+                    condaBatCandidates.includes(rCondaBat) ? rCondaBat : "__custom__"
+                  }
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setValidateError(null);
+                    if (v === "__custom__") {
+                      setRCondaBat("");
+                    } else {
+                      setRCondaBat(v);
+                      getCondaEnvs(v).then((res) => setCondaEnvsList(res.conda_envs));
+                    }
+                  }}
+                >
+                  {condaBatCandidates.map((path) => (
+                    <option key={path} value={path}>
+                      {path}
+                    </option>
+                  ))}
+                  <option value="__custom__">其他（手动输入下方）</option>
+                </select>
+                {(!rCondaBat || !condaBatCandidates.includes(rCondaBat)) ? (
+                  <input
+                    value={rCondaBat}
+                    onChange={(e) => {
+                      setRCondaBat(e.target.value);
+                      setValidateError(null);
+                    }}
+                    placeholder="conda.bat 完整路径"
+                  />
+                ) : null}
+              </>
+            ) : (
+              <input
+                value={rCondaBat}
+                onChange={(e) => {
+                  setRCondaBat(e.target.value);
+                  setValidateError(null);
+                }}
+                placeholder="conda.bat 或完整路径"
+              />
+            )}
           </label>
           <label>
-            Conda R 环境名
-            <input
-              value={rCondaEnv}
-              onChange={(e) => setRCondaEnv(e.target.value)}
-              placeholder="例如: r-seurat"
-            />
+            Conda R 环境名 <ParamTooltip text={PARAM_TOOLTIPS["Conda R 环境名"]} />
+            {condaEnvsList.length > 0 ? (
+              <select
+                value={rCondaEnv}
+                onChange={(e) => {
+                  setRCondaEnv(e.target.value);
+                  setValidateError(null);
+                }}
+              >
+                <option value="">（请选择）</option>
+                {[
+                  ...(rCondaEnv && !condaEnvsList.includes(rCondaEnv)
+                    ? [rCondaEnv]
+                    : []),
+                  ...condaEnvsList
+                ].map((env) => (
+                  <option key={env} value={env}>
+                    {env}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                value={rCondaEnv}
+                onChange={(e) => {
+                  setRCondaEnv(e.target.value);
+                  setValidateError(null);
+                }}
+                placeholder="例如: r-4.3"
+              />
+            )}
           </label>
         </div>
-        <button disabled={!canValidate || busyStep !== null} onClick={onValidate}>
-          {busyStep === "validate" ? "校验中..." : "开始校验"}
-        </button>
+        <div className="step-actions">
+          <button disabled={!canValidate || busyStep !== null} onClick={onValidate}>
+            {busyStep === "validate" ? "校验中..." : "开始校验"}
+          </button>
+          {validateError ? (
+            <div className="step-error" role="alert">
+              <p className="step-error-msg">{validateError}</p>
+              {validateRecommendation ? (
+                <p className="step-error-recommend">{validateRecommendation}</p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
         {validation ? (
           <div className="stack">
             <p>
@@ -468,12 +627,44 @@ export function App() {
 
             <div>
               <h3>metadata 字段</h3>
+              <p className="hint">点击字段名可查看该列的分类取值，便于后续筛选细胞。</p>
               {seuratInspect.metadata_columns.length > 0 ? (
-                <div className="chip-list">
-                  {seuratInspect.metadata_columns.map((column) => (
-                    <code key={column}>{column}</code>
-                  ))}
-                </div>
+                <>
+                  <div className="chip-list">
+                    {seuratInspect.metadata_columns.map((column) => (
+                      <button
+                        key={column}
+                        type="button"
+                        className={`chip ${selectedMetadataColumn === column ? "chip-active" : ""}`}
+                        onClick={() =>
+                          setSelectedMetadataColumn((prev) =>
+                            prev === column ? null : column
+                          )
+                        }
+                        title={`查看 ${column} 的取值`}
+                      >
+                        {column}
+                      </button>
+                    ))}
+                  </div>
+                  {selectedMetadataColumn != null && (
+                    <div className="metadata-values-panel">
+                      <strong>{selectedMetadataColumn}</strong> 的取值（共{" "}
+                      {(seuratInspect.metadata_column_values?.[selectedMetadataColumn]?.length ??
+                        0)}{" "}
+                      个）：
+                      <div className="chip-list metadata-values-list">
+                        {(seuratInspect.metadata_column_values?.[selectedMetadataColumn] ?? []).map(
+                          (value) => (
+                            <code key={value} className="value-chip">
+                              {value}
+                            </code>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </>
               ) : (
                 <p>未找到 metadata 列。</p>
               )}
@@ -515,7 +706,7 @@ export function App() {
         <h2>4) 500x500 预处理（V2 Phase 2）</h2>
         <div className="form-grid compact">
           <label>
-            分组字段（group_column）
+            分组字段（group_column） <ParamTooltip text={PARAM_TOOLTIPS["分组字段（group_column）"]} />
             <input
               value={groupColumn}
               onChange={(e) => setGroupColumn(e.target.value)}
@@ -524,7 +715,7 @@ export function App() {
             />
           </label>
           <label>
-            类群字段（cluster_column）
+            类群字段（cluster_column） <ParamTooltip text={PARAM_TOOLTIPS["类群字段（cluster_column）"]} />
             <input
               value={clusterColumn}
               onChange={(e) => setClusterColumn(e.target.value)}
@@ -533,7 +724,7 @@ export function App() {
             />
           </label>
           <label>
-            随机种子（seed）
+            随机种子（seed） <ParamTooltip text={PARAM_TOOLTIPS["随机种子（seed）"]} />
             <input
               type="number"
               value={prepareSeed}
@@ -541,7 +732,7 @@ export function App() {
             />
           </label>
           <label>
-            待筛选 clusters（逗号分隔）
+            待筛选 clusters（逗号分隔） <ParamTooltip text={PARAM_TOOLTIPS["待筛选 clusters（逗号分隔）"]} />
             <input
               value={selectedClustersText}
               onChange={(e) => setSelectedClustersText(e.target.value)}
@@ -589,7 +780,7 @@ export function App() {
         )}
         <div className="form-grid compact">
           <label>
-            gene_size
+            gene_size <ParamTooltip text={PARAM_TOOLTIPS.gene_size} />
             <input
               type="number"
               value={geneSize}
@@ -597,7 +788,7 @@ export function App() {
             />
           </label>
           <label>
-            output_dim
+            output_dim <ParamTooltip text={PARAM_TOOLTIPS.output_dim} />
             <input
               type="number"
               value={outputDim}
@@ -605,7 +796,7 @@ export function App() {
             />
           </label>
           <label>
-            batch_size
+            batch_size <ParamTooltip text={PARAM_TOOLTIPS.batch_size} />
             <input
               type="number"
               value={batchSize}
@@ -613,7 +804,7 @@ export function App() {
             />
           </label>
           <label>
-            lr
+            lr <ParamTooltip text={PARAM_TOOLTIPS.lr} />
             <input
               type="number"
               step="0.00001"
@@ -646,6 +837,12 @@ export function App() {
               <code>{formatTime(job.started_at)}</code>
               <span>ended</span>
               <code>{formatTime(job.ended_at)}</code>
+            </div>
+            <div className="live-log-box" aria-label="运行日志">
+              <h3>运行日志</h3>
+              <pre className="live-log-pre">
+                {jobLog || liveJobLog || "（等待日志…）"}
+              </pre>
             </div>
             {job.error_msg ? <pre className="log">{job.error_msg}</pre> : null}
           </div>

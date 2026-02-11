@@ -1,0 +1,34 @@
+# UI Debug: LabFlow 前端
+
+## 设计决策记录
+
+### [2026-02-11] 点击按钮后的即时反馈与运行日志「小电视」
+
+- **用户需求**：每一步点按钮后要有即时反馈；训练等长任务要有实时监测，如进度条或把后端 shell 当「小电视」展示。
+- **方案**：
+  1. **全局「当前任务」反馈**：当存在进行中步骤（`busyStep`）或任务处于 queued/running 时，在系统状态下方展示一个固定条带，包含：
+     - 无限循环动画的进度条（indeterminate），表示「正在处理」；
+     - 文案：上传中… / 校验中… / 解析 Seurat 中… / 500×500 预处理中… / 提交训练中… / 训练运行中…。
+  2. **运行日志「小电视」**：在「6) 任务轮询状态」中，当存在 job 时展示「运行日志」区块：
+     - 轮询 `GET /api/jobs/{job_id}/log`，每 2.5 秒刷新；
+     - 内容在深色、等宽、可滚动的 `<pre>` 中展示（max-height 220px），风格类似终端；
+     - 任务结束后保留最后一次拉取的日志，与下方「查看日志」一致。
+- **代码**：
+  - `frontend/src/App.tsx`：新增 `liveJobLog` 状态；轮询 `getJobLog` 的 useEffect（job 为 queued/running 时）；`taskLabelMap`、`showTaskFeedback`、`taskLabel`；插入「当前任务」条带与「运行日志」面板。
+  - `frontend/src/styles/tokens.css`：`.task-feedback`、`.task-progress`（含 `task-progress-shift` 动画）、`.task-label`、`.live-log-box`、`.live-log-pre`。
+- **Checkfix**：`npm run lint`、`npm run build` 通过。
+- **后续可做**：若后端为 validate/inspect/prepare 提供进度或流式日志，可再接上进度或实时日志。
+
+### [2026-02-11] 校验错误就近展示 + R/conda 参数菜单化
+- **用户需求**：报错应在用户视线处（按钮旁）弹出并给出当前系统推荐参数；R 相关参数（conda.bat、R 环境名）应由后端探测后在前端用菜单选择，避免手输。
+- **实现**：① 校验失败时仅设置 validateError（不设 globalError），在「开始校验」按钮旁用 step-error 区块展示错误与 validateRecommendation（Rscript/Conda 时推荐 cmd_conda + 完整路径 + r-4.3）；表单项 onChange 时清除 validateError。② 后端新增 GET /api/runtime/conda-envs（backend/app/api/runtime.py）：Windows 下扫描 PATH 与常见路径得到 conda.bat 候选，执行 conda env list（--json 或解析文本）得到环境名列表；支持 query conda_bat 只返回该路径下的 envs。③ 前端：请求 getCondaEnvs() 填充 condaBatCandidates、condaEnvsList；conda.bat 用 select（候选 +「其他（手动输入）」）+ 可选 input；Conda R 环境名用 select（conda_envs）；切换 conda.bat 时重新请求 envs。④ 样式：.step-actions、.step-error、.step-error-msg、.step-error-recommend。
+- **Checkfix**：ruff、frontend lint/build 通过。
+
+### [2026-02-11] 参数名后「?」悬停 1 秒显示说明气泡（傻瓜化）
+- **用户需求**：每个参数名称后面放一个小问号，鼠标悬停约 1 秒后弹出气泡，解释该参数在单细胞数据里是什么、干什么用，把用户当非专业用户「喂到嘴里」。
+- **方案**：
+  1. **ParamTooltip 组件**（`frontend/src/components/ParamTooltip.tsx`）：渲染内联「?」图标；`onMouseEnter` 设 1000ms 定时器，`onMouseLeave` 清除并隐藏；定时到后显示气泡（`role="tooltip"`），气泡内可继续悬停以保持显示；气泡深色背景、白字、小三角指向触发点，max-width 320px。
+  2. **文案**：同一文件内导出 `PARAM_TOOLTIPS`（Record<string, string>），为「数据名称」「主数据文件」「SMILES CSV」「使用药物结构模式」「R 执行方式」「Rscript 命令」「conda.bat 路径」「Conda R 环境名」「分组字段（group_column）」「类群字段（cluster_column）」「随机种子（seed）」「待筛选 clusters（逗号分隔）」以及 gene_size、output_dim、batch_size、lr 撰写简短、单细胞/LabFlow 语境下的说明。
+  3. **接入**：在 `App.tsx` 每个对应表单项的 label 文字后插入 `<ParamTooltip text={PARAM_TOOLTIPS["…"]} />`（或 `.gene_size` 等）。
+- **样式**：`tokens.css` 新增 `.param-tooltip-wrap`、`.param-tooltip-trigger`（圆形灰底「?」、hover 时 accent 色）、`.param-tooltip-bubble`（absolute、深色、圆角、三角箭头）。
+- **Checkfix**：`npm run build` 通过；无新增 lint 报错。

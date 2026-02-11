@@ -23,6 +23,8 @@ export type SeuratInspectReport = {
   n_cells: number;
   n_genes: number;
   metadata_columns: string[];
+  /** 每列的唯一取值，便于点击标签查看分类（如 celltype 下有哪些类型） */
+  metadata_column_values?: Record<string, string[]>;
   has_umap: boolean;
   umap?: {
     key: string;
@@ -272,4 +274,17 @@ export async function getModel(modelId: string): Promise<ModelRecord> {
 export async function getResultByJob(jobId: string): Promise<ResultRecord> {
   const payload = await requestJson<{ result: ResultRecord }>(`/api/results/job/${jobId}`);
   return payload.result;
+}
+
+export type CondaEnvsResponse = {
+  conda_bat_candidates: string[];
+  conda_envs: string[];
+};
+
+export async function getCondaEnvs(condaBat?: string): Promise<CondaEnvsResponse> {
+  const path =
+    condaBat != null && condaBat !== ""
+      ? `/api/runtime/conda-envs?conda_bat=${encodeURIComponent(condaBat)}`
+      : "/api/runtime/conda-envs";
+  return requestJson<CondaEnvsResponse>(path);
 }

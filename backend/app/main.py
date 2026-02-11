@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api.datasets import router as datasets_router
 from .api.jobs import router as jobs_router
 from .api.results import router as results_router
+from .api.runtime import router as runtime_router
 from .api.seurat import router as seurat_router
 from .runtime import job_queue
 
@@ -22,6 +23,7 @@ app.add_middleware(
 app.include_router(datasets_router)
 app.include_router(jobs_router)
 app.include_router(results_router)
+app.include_router(runtime_router)
 app.include_router(seurat_router)
 
 
