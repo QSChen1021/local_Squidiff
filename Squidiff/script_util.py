@@ -102,8 +102,8 @@ def create_model_and_diffusion(
         dropout=dropout,
         use_fp16=use_fp16,
         use_encoder=use_encoder,
-        use_drug_structure = use_drug_structure,
-        drug_dimension = drug_dimension,
+        use_drug_structure=use_drug_structure,
+        drug_dimension=drug_dimension,
         comb_num=comb_num,
     )
     diffusion = create_gaussian_diffusion(
@@ -115,7 +115,7 @@ def create_model_and_diffusion(
         rescale_timesteps=rescale_timesteps,
         rescale_learned_sigmas=rescale_learned_sigmas,
         timestep_respacing=timestep_respacing,
-        use_encoder=use_encoder
+        use_encoder=use_encoder,
     )
     return model, diffusion
 
@@ -131,23 +131,23 @@ def create_model(
     dropout=0,
     use_fp16=False,
     use_encoder=False,
-    use_drug_structure = False,
-    drug_dimension = 1024,
+    use_drug_structure=False,
+    drug_dimension=1024,
     comb_num=1,
 ):
 
     return MLPModel(
-        gene_size  = gene_size,
-        output_dim = output_dim,
-        num_layers = num_layers,
+        gene_size=gene_size,
+        output_dim=output_dim,
+        num_layers=num_layers,
         dropout=dropout,
         num_classes=(NUM_CLASSES if class_cond else None),
         use_checkpoint=use_checkpoint,
         use_fp16=use_fp16,
         use_scale_shift_norm=use_scale_shift_norm,
-        use_encoder = use_encoder,
-        use_drug_structure = use_drug_structure,
-        drug_dimension = drug_dimension,
+        use_encoder=use_encoder,
+        use_drug_structure=use_drug_structure,
+        drug_dimension=drug_dimension,
         comb_num=comb_num,
     )
 
@@ -186,7 +186,7 @@ def create_classifier_and_diffusion(
         rescale_timesteps=rescale_timesteps,
         rescale_learned_sigmas=rescale_learned_sigmas,
         timestep_respacing=timestep_respacing,
-        use_encoder=use_encoder
+        use_encoder=use_encoder,
     )
     return classifier, diffusion
 
@@ -266,7 +266,7 @@ def sr_create_model_and_diffusion(
         rescale_timesteps=rescale_timesteps,
         rescale_learned_sigmas=rescale_learned_sigmas,
         timestep_respacing=timestep_respacing,
-        use_encoder=use_encoder
+        use_encoder=use_encoder,
     )
     return model, diffusion
 
@@ -307,9 +307,9 @@ def create_gaussian_diffusion(
     rescale_timesteps=False,
     rescale_learned_sigmas=False,
     timestep_respacing="",
-    use_encoder = False
+    use_encoder=False,
 ):
-    print('diffusion num of steps = ',steps)
+    print("diffusion num of steps = ", steps)
     betas = diffusion.get_named_beta_schedule(noise_schedule, steps)
     if use_kl:
         loss_type = diffusion.LossType.RESCALED_KL
@@ -319,12 +319,14 @@ def create_gaussian_diffusion(
         loss_type = diffusion.LossType.MSE
     if not timestep_respacing:
         timestep_respacing = [steps]
-        
+
     return SpacedDiffusion(
         use_timesteps=space_timesteps(steps, timestep_respacing),
         betas=betas,
         model_mean_type=(
-            diffusion.ModelMeanType.EPSILON if not predict_xstart else diffusion.ModelMeanType.START_X
+            diffusion.ModelMeanType.EPSILON
+            if not predict_xstart
+            else diffusion.ModelMeanType.START_X
         ),
         model_var_type=(
             (
@@ -337,7 +339,7 @@ def create_gaussian_diffusion(
         ),
         loss_type=loss_type,
         rescale_timesteps=rescale_timesteps,
-        use_encoder=use_encoder
+        use_encoder=use_encoder,
     )
 
 

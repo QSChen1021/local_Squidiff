@@ -85,7 +85,9 @@ class SquidiffRunner:
             tail = (stderr or "").strip() or (stdout or "").strip()
             if not tail and log_path.exists():
                 try:
-                    tail = log_path.read_text(encoding="utf-8", errors="replace").strip()
+                    tail = log_path.read_text(
+                        encoding="utf-8", errors="replace"
+                    ).strip()
                 except OSError:
                     pass
             if len(tail) > 1500:

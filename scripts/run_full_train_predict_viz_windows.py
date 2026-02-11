@@ -278,8 +278,8 @@ def poll_job_until_done(
                 util = get_gpu_utilization()
                 python_on_gpu = is_python_process_on_gpu()
                 extend = (
-                    (util is not None and util > gpu_busy_threshold) or python_on_gpu
-                )
+                    util is not None and util > gpu_busy_threshold
+                ) or python_on_gpu
             if extend:
                 deadline += extend_sec
                 deadline = min(deadline, started + max_total_sec)

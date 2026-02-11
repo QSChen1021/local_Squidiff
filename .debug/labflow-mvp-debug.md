@@ -404,6 +404,9 @@
 - Impact assessment
 - 仅在本任务训练进程（具体 PID）仍占用 GPU 时延长等待，其它程序占用 GPU 不会触发延长。
 
+### [2026-02-11] Black 格式化与 Checkfix
+- 用户已通过 `python -m black` 成功执行 black（PATH 已含 Python313\Scripts 或使用 python -m）。先对 `backend`、`scripts` 格式化 6 个文件；后对**全项目**执行 `python -m black .`，再格式化 Squidiff/ 与根目录共 14 个文件（dist_util.py、nn.py、respace.py、scrna_datasets.py、sample_squidiff.py、resample.py、Squidiff/train_squidiff.py、train_squidiff.py、MLPModel.py、fp16_util.py、logger.py、script_util.py、train_util.py、diffusion.py）。当前 `python -m black --check .` 与 `ruff check .` 均通过（45 files unchanged）。
+
 ## Open Issues
 - Real-world Seurat conversion relies on local R/SeuratDisk availability.
 - Production auth is intentionally simplified for MVP.

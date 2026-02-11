@@ -4,6 +4,7 @@
 需先启动后端: uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
 Windows 下使用 conda r-4.3 进行 R 转换（cmd_conda）。
 """
+
 from __future__ import annotations
 
 import json
@@ -21,7 +22,9 @@ DATA_DIR = REPO_ROOT / "data"
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 DEFAULT_R_CONDA_ENV = "r-4.3"
 # Miniconda 在 F: 盘时的 conda.bat
-DEFAULT_R_CONDA_BAT = os.getenv("LABFLOW_R_CONDA_BAT", "F:\\software\\Miniconda3\\condabin\\conda.bat")
+DEFAULT_R_CONDA_BAT = os.getenv(
+    "LABFLOW_R_CONDA_BAT", "F:\\software\\Miniconda3\\condabin\\conda.bat"
+)
 
 
 def request_json(
@@ -50,12 +53,20 @@ def _infer_group_and_cluster_columns(h5ad_path: Path) -> tuple[str, str, list[st
     try:
         import scanpy as sc
     except ModuleNotFoundError:
-        raise RuntimeError("需要 scanpy 才能自动推断列名，请安装: pip install scanpy") from None
+        raise RuntimeError(
+            "需要 scanpy 才能自动推断列名，请安装: pip install scanpy"
+        ) from None
     adata = sc.read_h5ad(str(h5ad_path))
     cols = list(adata.obs.columns)
     # 常见命名
     group_candidates = ["Group", "group", "orig.ident", "condition", "sample"]
-    cluster_candidates = ["seurat_clusters", "Cluster", "cluster", "celltype", "louvain"]
+    cluster_candidates = [
+        "seurat_clusters",
+        "Cluster",
+        "cluster",
+        "celltype",
+        "louvain",
+    ]
     group_column = next((c for c in group_candidates if c in cols), None)
     cluster_column = next((c for c in cluster_candidates if c in cols), None)
     if not cluster_column:
@@ -100,7 +111,9 @@ def main() -> None:
 
         # 1) 注册本地文件（复制到 backend/uploads）
         reg = request_json(
-            base_url, "POST", "/api/datasets/register-local",
+            base_url,
+            "POST",
+            "/api/datasets/register-local",
             payload={
                 "local_path": str(rds_path),
                 "dataset_name": name,
@@ -114,7 +127,9 @@ def main() -> None:
         # 2) 校验 + R 转 h5ad（cmd_conda + r-4.3）
         try:
             val = request_json(
-                base_url, "POST", f"/api/datasets/{dataset_id}/validate",
+                base_url,
+                "POST",
+                f"/api/datasets/{dataset_id}/validate",
                 payload={
                     "auto_convert": True,
                     "r_exec_mode": "cmd_conda",
@@ -136,26 +151,36 @@ def main() -> None:
         # 3) Inspect（可选，仅打印）
         try:
             insp = request_json(
-                base_url, "POST", "/api/seurat/inspect",
+                base_url,
+                "POST",
+                "/api/seurat/inspect",
                 payload={"dataset_id": dataset_id, "umap_preview_limit": 500},
                 timeout_sec=120,
             )
             meta = insp.get("inspect", {}).get("metadata_columns", [])
-            print(f"  inspect: n_cells={insp.get('inspect', {}).get('n_cells')}, columns={meta[:8]}...")
+            print(
+                f"  inspect: n_cells={insp.get('inspect', {}).get('n_cells')}, columns={meta[:8]}..."
+            )
         except Exception as e:
             print(f"  inspect 失败（继续）: {e}")
 
         # 4) 推断 group / cluster 列并调用 prepare-training 500×500
         try:
-            group_col, cluster_col, selected = _infer_group_and_cluster_columns(Path(path_h5ad))
+            group_col, cluster_col, selected = _infer_group_and_cluster_columns(
+                Path(path_h5ad)
+            )
         except Exception as e:
             print(f"  推断列名失败: {e}")
             continue
-        print(f"  使用: group_column={group_col}, cluster_column={cluster_col}, selected_clusters={selected[:5]}...")
+        print(
+            f"  使用: group_column={group_col}, cluster_column={cluster_col}, selected_clusters={selected[:5]}..."
+        )
 
         try:
             prep = request_json(
-                base_url, "POST", "/api/seurat/prepare-training",
+                base_url,
+                "POST",
+                "/api/seurat/prepare-training",
                 payload={
                     "dataset_id": dataset_id,
                     "group_column": group_col,
@@ -172,12 +197,16 @@ def main() -> None:
         n_cells = prep.get("n_cells")
         n_genes = prep.get("n_genes")
         prep_id = prep.get("prepared_dataset_id")
-        print(f"  prepare-training: prepared_dataset_id={prep_id}, n_cells={n_cells}, n_genes={n_genes}")
+        print(
+            f"  prepare-training: prepared_dataset_id={prep_id}, n_cells={n_cells}, n_genes={n_genes}"
+        )
         if n_cells is not None and n_genes is not None:
             if 0 < n_cells <= 500 and 0 < n_genes <= 500:
                 print("  -> 500×500 逻辑校验通过")
             else:
-                print(f"  -> 注意: 未在 500×500 范围内 (cells={n_cells}, genes={n_genes})")
+                print(
+                    f"  -> 注意: 未在 500×500 范围内 (cells={n_cells}, genes={n_genes})"
+                )
         print()
 
     print("=== 测试结束 ===")

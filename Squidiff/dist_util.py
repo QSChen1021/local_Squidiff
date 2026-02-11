@@ -11,7 +11,6 @@ import socket
 import torch as th
 import torch.distributed as dist
 
-
 GPUS_PER_NODE = 1
 
 SETUP_RETRY_COUNT = 3
@@ -32,10 +31,14 @@ def setup_dist():
         print("Environment variable WORLD_SIZE not set. Setting default WORLD_SIZE=1")
         os.environ["WORLD_SIZE"] = "1"
     if "MASTER_ADDR" not in os.environ:
-        print("Environment variable MASTER_ADDR not set. Setting default MASTER_ADDR='localhost'")
+        print(
+            "Environment variable MASTER_ADDR not set. Setting default MASTER_ADDR='localhost'"
+        )
         os.environ["MASTER_ADDR"] = "localhost"
     if "MASTER_PORT" not in os.environ:
-        print("Environment variable MASTER_PORT not set. Setting default MASTER_PORT='12355'")
+        print(
+            "Environment variable MASTER_PORT not set. Setting default MASTER_PORT='12355'"
+        )
         os.environ["MASTER_PORT"] = "12355"
 
     rank = int(os.environ["RANK"])
@@ -60,7 +63,7 @@ def load_state_dict(path, **kwargs):
     """
     Load a PyTorch file without redundant fetches across ranks.
     """
-    chunk_size = 2 ** 30  # Size limit for data chunks
+    chunk_size = 2**30  # Size limit for data chunks
 
     if not dist.is_available() or not dist.is_initialized():
         # Load directly if distributed training is not available or initialized
@@ -75,7 +78,7 @@ def load_state_dict(path, **kwargs):
             num_chunks_tensor = th.tensor([num_chunks], dtype=th.int64)
             dist.broadcast(num_chunks_tensor, 0)
             for i in range(0, len(data), chunk_size):
-                chunk = th.tensor(list(data[i:i + chunk_size]), dtype=th.uint8)
+                chunk = th.tensor(list(data[i : i + chunk_size]), dtype=th.uint8)
                 dist.broadcast(chunk, 0)
         else:
             num_chunks_tensor = th.tensor([0], dtype=th.int64)
@@ -90,12 +93,13 @@ def load_state_dict(path, **kwargs):
         state_dict = th.load(io.BytesIO(data), **kwargs)
 
     # Extract the model state dictionary if needed
-    if 'state_dict' in state_dict:
-        state_dict = state_dict['state_dict']
-    elif 'model' in state_dict:
-        state_dict = state_dict['model']
+    if "state_dict" in state_dict:
+        state_dict = state_dict["state_dict"]
+    elif "model" in state_dict:
+        state_dict = state_dict["model"]
 
     return state_dict
+
 
 def sync_params(params):
     """

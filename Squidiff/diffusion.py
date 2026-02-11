@@ -3,6 +3,7 @@ This code is adapted from openai's guided-diffusion models and Konpat's diffae m
 https://github.com/openai/guided-diffusion
 https://github.com/phizaz/diffae
 """
+
 import enum
 import math
 
@@ -11,6 +12,7 @@ import torch as th
 
 from .nn import mean_flat
 from .losses import normal_kl, discretized_gaussian_log_likelihood
+
 
 def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
     """
@@ -38,6 +40,7 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
     else:
         raise NotImplementedError(f"unknown beta schedule: {schedule_name}")
 
+
 def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
     """
     Create a beta schedule that discretizes the given alpha_t_bar function,
@@ -56,6 +59,7 @@ def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
         t2 = (i + 1) / num_diffusion_timesteps
         betas.append(min(1 - alpha_bar(t2) / alpha_bar(t1), max_beta))
     return np.array(betas)
+
 
 class ModelMeanType(enum.Enum):
     """
@@ -79,17 +83,18 @@ class ModelVarType(enum.Enum):
     FIXED_SMALL = enum.auto()
     FIXED_LARGE = enum.auto()
     LEARNED_RANGE = enum.auto()
-    
+
+
 class LossType(enum.Enum):
-    MSE = enum.auto()  
-    RESCALED_MSE = enum.auto() 
-    KL = enum.auto() 
-    RESCALED_KL = enum.auto() 
+    MSE = enum.auto()
+    RESCALED_MSE = enum.auto()
+    KL = enum.auto()
+    RESCALED_KL = enum.auto()
 
     def is_vb(self):
         return self == LossType.KL or self == LossType.RESCALED_KL
-    
-    
+
+
 class GaussianDiffusion:
     """
     Utilities for training and sampling diffusion models.
@@ -248,10 +253,10 @@ class GaussianDiffusion:
         """
         if model_kwargs is None:
             model_kwargs = {}
-        
+
         B, C = x.shape[:2]
-        #print(t.shape)
-        #print(x.shape)
+        # print(t.shape)
+        # print(x.shape)
         assert t.shape == (B,)
         model_output = model(x, self._scale_timesteps(t), **model_kwargs)
 
@@ -272,10 +277,12 @@ class GaussianDiffusion:
                 model_variance = th.exp(model_log_variance)
         else:
             model_variance = np.append(self.posterior_variance[1], self.betas[1:])
-            model_log_variance = np.log(np.append(self.posterior_variance[1], self.betas[1:]))
-           
-            #model_variance = self.posterior_variance
-            #model_log_variance =  self.posterior_log_variance_clipped
+            model_log_variance = np.log(
+                np.append(self.posterior_variance[1], self.betas[1:])
+            )
+
+            # model_variance = self.posterior_variance
+            # model_log_variance =  self.posterior_log_variance_clipped
 
             model_variance = _extract_into_tensor(model_variance, t, x.shape)
             model_log_variance = _extract_into_tensor(model_log_variance, t, x.shape)
@@ -285,16 +292,18 @@ class GaussianDiffusion:
                 x = denoised_fn(x)
             if clip_denoised:
                 return x.clamp(-1, 1)
-            return x.clamp(0,)
+            return x.clamp(
+                0,
+            )
 
-        #if self.model_mean_type == ModelMeanType.PREVIOUS_X:
-        #pred_xstart = process_xstart(
+        # if self.model_mean_type == ModelMeanType.PREVIOUS_X:
+        # pred_xstart = process_xstart(
         #        self._predict_xstart_from_xprev(x_t=x, t=t, xprev=model_output)
-        #)
-        #model_mean = model_output
-        #elif self.model_mean_type in [ModelMeanType.START_X, ModelMeanType.EPSILON]:
+        # )
+        # model_mean = model_output
+        # elif self.model_mean_type in [ModelMeanType.START_X, ModelMeanType.EPSILON]:
         #    if self.model_mean_type == ModelMeanType.START_X:
-        #pred_xstart = process_xstart(model_output)
+        # pred_xstart = process_xstart(model_output)
         #    else:
         pred_xstart = process_xstart(
             self._predict_xstart_from_eps(x_t=x, t=t, eps=model_output)
@@ -302,7 +311,7 @@ class GaussianDiffusion:
         model_mean, _, _ = self.q_posterior_mean_variance(
             x_start=pred_xstart, x_t=x, t=t
         )
-        #else:
+        # else:
         #    raise NotImplementedError(self.model_mean_type)
 
         assert (
@@ -528,7 +537,7 @@ class GaussianDiffusion:
         self,
         model,
         x,
-        t, 
+        t,
         clip_denoised=False,
         denoised_fn=None,
         cond_fn=None,
@@ -540,7 +549,7 @@ class GaussianDiffusion:
 
         Same usage as p_sample().
         """
-        
+
         out = self.p_mean_variance(
             model,
             x,
@@ -567,7 +576,7 @@ class GaussianDiffusion:
         noise = th.randn_like(x)
         mean_pred = (
             out["pred_xstart"] * th.sqrt(alpha_bar_prev)
-            + th.sqrt(1 - alpha_bar_prev - sigma ** 2) * eps
+            + th.sqrt(1 - alpha_bar_prev - sigma**2) * eps
         )
         nonzero_mask = (
             (t != 0).float().view(-1, *([1] * (len(x.shape) - 1)))
@@ -701,14 +710,14 @@ class GaussianDiffusion:
         self, model, x_start, x_t, t, clip_denoised=True, model_kwargs=None
     ):
         """
-        Get a term for the variational lower-bound.
+                Get a term for the variational lower-bound.
 
-The resulting units are bits (rather than nats, as one might expect).
-        This allows for comparison to other papers.
+        The resulting units are bits (rather than nats, as one might expect).
+                This allows for comparison to other papers.
 
-        :return: a dict with the following keys:
-                 - 'output': a shape [N] tensor of NLLs or KLs.
-                 - 'pred_xstart': the x_0 predictions.
+                :return: a dict with the following keys:
+                         - 'output': a shape [N] tensor of NLLs or KLs.
+                         - 'pred_xstart': the x_0 predictions.
         """
         true_mean, _, true_log_variance_clipped = self.q_posterior_mean_variance(
             x_start=x_start, x_t=x_t, t=t
@@ -742,7 +751,7 @@ The resulting units are bits (rather than nats, as one might expect).
         :param model_kwargs: if not None, a dict of extra keyword arguments to
             pass to the model. This can be used for conditioning.
         :param noise: if specified, the specific Gaussian noise to try to remove.
-        
+
         :return: a dict with the key "loss" containing a tensor of shape [N].
                  Some mean or variance settings may also have other keys.
         """
@@ -750,13 +759,13 @@ The resulting units are bits (rather than nats, as one might expect).
             model_kwargs = {}
         if noise is None:
             noise = th.randn_like(x_start)
-       
+
         # for a given x_start, compute the x_t at time t in forward process
         x_t = self.q_sample(x_start, t, noise=noise)
-        model_kwargs['x_start'] = x_start
+        model_kwargs["x_start"] = x_start
         terms = {}
         if self.loss_type == LossType.KL or self.loss_type == LossType.RESCALED_KL:
-            
+
             terms["loss"] = self._vb_terms_bpd(
                 model=model,
                 x_start=x_start,
@@ -767,8 +776,8 @@ The resulting units are bits (rather than nats, as one might expect).
             )["output"]
             if self.loss_type == LossType.RESCALED_KL:
                 terms["loss"] *= self.num_timesteps
-                
-        #elif self.loss_type == LossType.MSE or self.loss_type == LossType.RESCALED_MSE:
+
+        # elif self.loss_type == LossType.MSE or self.loss_type == LossType.RESCALED_MSE:
         ## loss = MSE
         else:
             model_output = model(x_t, self._scale_timesteps(t), **model_kwargs)
@@ -809,7 +818,6 @@ The resulting units are bits (rather than nats, as one might expect).
             else:
                 terms["loss"] = terms["mse"]
 
-        
         return terms
 
     def _prior_bpd(self, x_start):

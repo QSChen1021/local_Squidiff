@@ -7,7 +7,6 @@ from pathlib import Path
 
 from ..core.config import settings
 
-
 SUPPORTED_INPUTS = {".h5ad", ".h5seurat", ".rds"}
 
 

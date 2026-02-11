@@ -9,13 +9,16 @@ WARN = 30
 ERROR = 40
 DISABLED = 50
 
+
 class KVWriter:
     def writekvs(self, kvs):
         raise NotImplementedError
 
+
 class SeqWriter:
     def writeseq(self, seq):
         raise NotImplementedError
+
 
 class HumanOutputFormat(KVWriter, SeqWriter):
     def __init__(self, filename_or_file):
@@ -31,7 +34,7 @@ class HumanOutputFormat(KVWriter, SeqWriter):
 
     def writekvs(self, kvs):
         key2str = {}
-        for (key, val) in sorted(kvs.items()):
+        for key, val in sorted(kvs.items()):
             if hasattr(val, "__float__"):
                 valstr = "%-8.3g" % val
             else:
@@ -47,7 +50,7 @@ class HumanOutputFormat(KVWriter, SeqWriter):
 
         dashes = "-" * (keywidth + valwidth + 7)
         lines = [dashes]
-        for (key, val) in sorted(key2str.items(), key=lambda kv: kv[0].lower()):
+        for key, val in sorted(key2str.items(), key=lambda kv: kv[0].lower()):
             lines.append(
                 "| %s%s | %s%s |"
                 % (key, " " * (keywidth - len(key)), val, " " * (valwidth - len(val)))
@@ -55,7 +58,7 @@ class HumanOutputFormat(KVWriter, SeqWriter):
         lines.append(dashes)
         log_message = "\n".join(lines) + "\n"
         self.file.write(log_message)
-        #logger.info(log_message)  # Log to file using the logger
+        # logger.info(log_message)  # Log to file using the logger
 
         self.file.flush()
 
@@ -65,7 +68,7 @@ class HumanOutputFormat(KVWriter, SeqWriter):
 
     def writeseq(self, seq):
         seq = list(seq)
-        for (i, elem) in enumerate(seq):
+        for i, elem in enumerate(seq):
             self.file.write(elem)
             if i < len(seq) - 1:  # add space unless this is the last one
                 self.file.write(" ")
@@ -75,6 +78,7 @@ class HumanOutputFormat(KVWriter, SeqWriter):
     def close(self):
         if self.own_file:
             self.file.close()
+
 
 class JSONOutputFormat(KVWriter):
     def __init__(self, filename):
@@ -90,6 +94,7 @@ class JSONOutputFormat(KVWriter):
     def close(self):
         self.file.close()
 
+
 class CSVOutputFormat(KVWriter):
     def __init__(self, filename):
         self.file = open(filename, "w+t")
@@ -104,7 +109,7 @@ class CSVOutputFormat(KVWriter):
             self.file.seek(0)
             lines = self.file.readlines()
             self.file.seek(0)
-            for (i, k) in enumerate(self.keys):
+            for i, k in enumerate(self.keys):
                 if i > 0:
                     self.file.write(",")
                 self.file.write(k)
@@ -113,7 +118,7 @@ class CSVOutputFormat(KVWriter):
                 self.file.write(line[:-1])
                 self.file.write(self.sep * len(extra_keys))
                 self.file.write("\n")
-        for (i, k) in enumerate(self.keys):
+        for i, k in enumerate(self.keys):
             if i > 0:
                 self.file.write(",")
             v = kvs.get(k)
@@ -124,6 +129,7 @@ class CSVOutputFormat(KVWriter):
 
     def close(self):
         self.file.close()
+
 
 def make_output_format(format, ev_dir, log_suffix=""):
     os.makedirs(ev_dir, exist_ok=True)
@@ -138,42 +144,55 @@ def make_output_format(format, ev_dir, log_suffix=""):
     else:
         raise ValueError("Unknown format specified: %s" % (format,))
 
+
 def logkv(key, val):
     get_current().logkv(key, val)
+
 
 def logkv_mean(key, val):
     get_current().logkv_mean(key, val)
 
+
 def logkvs(d):
-    for (k, v) in d.items():
+    for k, v in d.items():
         logkv(k, v)
+
 
 def dumpkvs():
     return get_current().dumpkvs()
 
+
 def getkvs():
     return get_current().name2val
+
 
 def log(*args, level=INFO):
     get_current().log(*args, level=level)
 
+
 def debug(*args):
     log(*args, level=DEBUG)
+
 
 def info(*args):
     log(*args, level=INFO)
 
+
 def warn(*args):
     log(*args, level=WARN)
+
 
 def error(*args):
     log(*args, level=ERROR)
 
+
 def set_level(level):
     get_current().set_level(level)
 
+
 def get_dir():
     return get_current().get_dir()
+
 
 class Logger:
     DEFAULT = None
@@ -222,12 +241,13 @@ class Logger:
             if isinstance(fmt, SeqWriter):
                 fmt.writeseq(map(str, args))
 
+
 def configure(dir, format_strs=None, log_suffix=""):
 
     dir = os.path.expanduser(dir)
     os.makedirs(os.path.expanduser(dir), exist_ok=True)
 
-    rank = 0 #get_rank_without_mpi_import()
+    rank = 0  # get_rank_without_mpi_import()
     if rank > 0:
         log_suffix = log_suffix + "-rank%03i" % rank
 
@@ -242,6 +262,7 @@ def configure(dir, format_strs=None, log_suffix=""):
     Logger.CURRENT = Logger(dir=dir, output_formats=output_formats)
     if output_formats:
         log("Logging to %s" % dir)
+
 
 def get_current():
     if Logger.CURRENT is None:

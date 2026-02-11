@@ -104,6 +104,7 @@ if _MULTIPART_AVAILABLE:
             dataset_name=dataset_name,
             smiles_path=smiles_path,
         )
+
 else:
 
     @router.post("/upload")

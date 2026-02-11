@@ -19,13 +19,11 @@ class GroupNorm32(nn.GroupNorm):
         return super().forward(x.float()).type(x.dtype)
 
 
-
 def linear(*args, **kwargs):
     """
     Create a linear module.
     """
     return nn.Linear(*args, **kwargs)
-
 
 
 def update_ema(target_params, source_params, rate=0.99):

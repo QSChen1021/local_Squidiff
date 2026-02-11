@@ -3,6 +3,7 @@ This code is adapted from openai's guided-diffusion models and Konpat's diffae m
 https://github.com/openai/guided-diffusion
 https://github.com/phizaz/diffae
 """
+
 import copy
 import functools
 import os
@@ -20,31 +21,45 @@ import numpy as np
 
 INITIAL_LOG_LOSS_SCALE = 20.0
 
-def plot_loss(losses,args_train):
+
+def plot_loss(losses, args_train):
     # Convert losses to a numpy array
     losses_np = np.array([i.detach().cpu().numpy() for i in losses])
 
     # Define the window size for the moving average
-    window_size = int(args_train['lr_anneal_steps']/1000)+1  # You can adjust this value based on your preference
+    window_size = (
+        int(args_train["lr_anneal_steps"] / 1000) + 1
+    )  # You can adjust this value based on your preference
 
     # Calculate the moving average (mean of the windowed losses)
-    windowed_mean_loss = np.convolve(losses_np, np.ones(window_size) / window_size, mode='valid')
+    windowed_mean_loss = np.convolve(
+        losses_np, np.ones(window_size) / window_size, mode="valid"
+    )
 
     # Adjust the x-axis values for the windowed mean loss
-    x_vals = np.linspace(0, args_train['lr_anneal_steps']-1, len(losses_np))
-    windowed_x_vals = x_vals[window_size - 1:]  # Adjust to match the length of the windowed_mean_loss
+    x_vals = np.linspace(0, args_train["lr_anneal_steps"] - 1, len(losses_np))
+    windowed_x_vals = x_vals[
+        window_size - 1 :
+    ]  # Adjust to match the length of the windowed_mean_loss
 
     # Plotting
-    fig,ax = plt.subplots(figsize=(4.5, 3.4), dpi=800)
-    plt.plot(x_vals, losses_np, label='Training Loss', alpha=0.2)
-    plt.plot(windowed_x_vals, windowed_mean_loss, label='Windowed Mean Loss', color='r', linewidth=1)
+    fig, ax = plt.subplots(figsize=(4.5, 3.4), dpi=800)
+    plt.plot(x_vals, losses_np, label="Training Loss", alpha=0.2)
+    plt.plot(
+        windowed_x_vals,
+        windowed_mean_loss,
+        label="Windowed Mean Loss",
+        color="r",
+        linewidth=1,
+    )
 
-    plt.xlabel('Epochs')
-    plt.ylabel('Loss')
-    plt.title('Training Loss')
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
+    plt.title("Training Loss")
     plt.legend()
     plt.grid(True)
-    fig.savefig(args_train['resume_checkpoint']+'/loss_plot.pdf', transparent=True)
+    fig.savefig(args_train["resume_checkpoint"] + "/loss_plot.pdf", transparent=True)
+
 
 class TrainLoop:
     def __init__(
@@ -66,9 +81,9 @@ class TrainLoop:
         weight_decay=0.0,
         lr_anneal_steps=0,
         use_drug_structure=False,
-        comb_num=1
+        comb_num=1,
     ):
-        
+
         self.model = model
         self.diffusion = diffusion
         self.use_drug_structure = use_drug_structure
@@ -92,11 +107,11 @@ class TrainLoop:
 
         self.step = 0
         self.resume_step = 0
-        self.global_batch = self.batch_size #* dist.get_world_size()
+        self.global_batch = self.batch_size  # * dist.get_world_size()
 
         self.sync_cuda = th.cuda.is_available()
         self.loss_list = []
-        #self._load_and_sync_parameters()
+        # self._load_and_sync_parameters()
         self.mp_trainer = MixedPrecisionTrainer(
             model=self.model,
             use_fp16=self.use_fp16,
@@ -121,14 +136,14 @@ class TrainLoop:
 
         if th.cuda.is_available():
             self.use_ddp = True
-            #self.ddp_model = DDP(
+            # self.ddp_model = DDP(
             #    self.model,
             #    device_ids=[dist_util.dev()],
             #    output_device=dist_util.dev(),
             #    broadcast_buffers=False,
             #    bucket_cap_mb=128,
             #    find_unused_parameters=False,
-            #)
+            # )
             self.ddp_model = self.model
         else:
             if dist.get_world_size() > 1:
@@ -138,8 +153,6 @@ class TrainLoop:
                 )
             self.use_ddp = False
             self.ddp_model = self.model
-            
-        
 
     def _load_and_sync_parameters(self):
         resume_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
@@ -189,16 +202,14 @@ class TrainLoop:
             not self.lr_anneal_steps
             or self.step + self.resume_step < self.lr_anneal_steps
         ):
-           
-            
+
             batch = next(iter(self.data))
 
             self.run_step(batch)
-            
-            
+
             if self.step % self.log_interval == 0:
                 logger.dumpkvs()
-            
+
             if self.step % self.save_interval == 0:
                 self.save()
                 # Run for a finite amount of time in integration tests.
@@ -219,24 +230,26 @@ class TrainLoop:
 
     def forward_backward(self, batch):
         self.mp_trainer.zero_grad()
-        
-        for i in range(0, batch['feature'].shape[0], self.microbatch):
-            
-            micro = batch['feature'][i : i + self.microbatch].to(dist_util.dev())
+
+        for i in range(0, batch["feature"].shape[0], self.microbatch):
+
+            micro = batch["feature"][i : i + self.microbatch].to(dist_util.dev())
             if self.use_drug_structure:
                 micro_cond = {
-                    'group': batch['group'][i : i + self.microbatch],
-                    'drug_dose': batch['drug_dose'][i : i + self.microbatch].to(dist_util.dev()),
-                    'control_feature':batch['control_feature'].to(dist_util.dev()),
+                    "group": batch["group"][i : i + self.microbatch],
+                    "drug_dose": batch["drug_dose"][i : i + self.microbatch].to(
+                        dist_util.dev()
+                    ),
+                    "control_feature": batch["control_feature"].to(dist_util.dev()),
                 }
             else:
                 micro_cond = {
-                    'group': batch['group'][i : i + self.microbatch],
-                    'drug_dose':None,
-                    'control_feature':None
+                    "group": batch["group"][i : i + self.microbatch],
+                    "drug_dose": None,
+                    "control_feature": None,
                 }
-            
-            last_batch = (i + self.microbatch) >= batch['feature'].shape[0]
+
+            last_batch = (i + self.microbatch) >= batch["feature"].shape[0]
             t, weights = self.schedule_sampler.sample(micro.shape[0], dist_util.dev())
 
             compute_losses = functools.partial(
@@ -249,7 +262,7 @@ class TrainLoop:
 
             if last_batch or not self.use_ddp:
                 losses = compute_losses()
-            elif hasattr(self.ddp_model, 'no_sync'):
+            elif hasattr(self.ddp_model, "no_sync"):
                 with self.ddp_model.no_sync():
                     losses = compute_losses()
             else:
@@ -261,16 +274,15 @@ class TrainLoop:
                 )
 
             loss = (losses["loss"] * weights).mean()
-            
-            
+
             log_loss_dict(
                 self.diffusion, t, {k: v * weights for k, v in losses.items()}
             )
-            
+
             self.mp_trainer.backward(loss)
-            
+
         self.loss_list.append(loss)
-        #print('loss=',loss)
+        # print('loss=',loss)
 
     def _update_ema(self):
         for rate, params in zip(self.ema_rate, self.ema_params):
@@ -290,20 +302,35 @@ class TrainLoop:
 
     def save(self):
         def save_checkpoint(rate, params):
-            state_dict = self.mp_trainer.master_params_to_state_dict(params) if self.mp_trainer else self.model.state_dict()
-            if not dist.is_available() or not dist.is_initialized() or dist.get_rank() == 0:
+            state_dict = (
+                self.mp_trainer.master_params_to_state_dict(params)
+                if self.mp_trainer
+                else self.model.state_dict()
+            )
+            if (
+                not dist.is_available()
+                or not dist.is_initialized()
+                or dist.get_rank() == 0
+            ):
                 logger.log(f"saving model {rate}...")
                 if not os.path.exists(self.resume_checkpoint):
                     # Directory doesn't exist, so create it
                     os.makedirs(self.resume_checkpoint)
-                if not rate: 
+                if not rate:
                     filepath = os.path.join(self.resume_checkpoint, "model.pt")
                 else:
                     filepath = os.path.join(self.resume_checkpoint, f"model_{rate}.pt")
                 with open(filepath, "wb") as f:
                     th.save(state_dict, f)
 
-        save_checkpoint(0, self.mp_trainer.master_params if self.mp_trainer else self.model.parameters())
+        save_checkpoint(
+            0,
+            (
+                self.mp_trainer.master_params
+                if self.mp_trainer
+                else self.model.parameters()
+            ),
+        )
         for rate, params in zip(self.ema_rate, self.ema_params):
             save_checkpoint(rate, params)
 
@@ -315,6 +342,7 @@ class TrainLoop:
 
         if dist.is_available() and dist.is_initialized():
             dist.barrier()
+
 
 def parse_resume_step_from_filename(filename):
     """
