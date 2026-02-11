@@ -116,6 +116,23 @@ backend/artifacts/
 frontend/node_modules/
 frontend/dist/
 
+# Runtime DB / cache / temp
+*.db
+*.sqlite
+*.sqlite3
+*.pid
+*.out
+*.bak
+.black-cache/
+.uv-cache/
+tmp_cache/
+
+# Local env files (keep templates)
+.env
+.env.*
+!.env.example
+!infra/.env.example
+
 # Node.js / Frontend package manager lock files
 package-lock.json
 yarn.lock

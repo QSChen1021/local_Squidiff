@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import os
 import re
 import subprocess
 import sys
+from datetime import datetime, timezone
+from io import StringIO
 from pathlib import Path
 
 from fastapi import APIRouter, Query
@@ -101,6 +104,91 @@ def _run_conda_env_list(conda_bat: str) -> list[str]:
     return env_names
 
 
+def _parse_int(value: str) -> int | None:
+    try:
+        return int(value.strip())
+    except (ValueError, AttributeError):
+        return None
+
+
+def _parse_float(value: str) -> float | None:
+    try:
+        return float(value.strip())
+    except (ValueError, AttributeError):
+        return None
+
+
+def _read_gpu_stats() -> dict[str, object]:
+    query_fields = [
+        "index",
+        "name",
+        "utilization.gpu",
+        "utilization.memory",
+        "memory.used",
+        "memory.total",
+        "temperature.gpu",
+        "power.draw",
+        "power.limit",
+    ]
+    cmd = [
+        "nvidia-smi",
+        f"--query-gpu={','.join(query_fields)}",
+        "--format=csv,noheader,nounits",
+    ]
+
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=4)
+    except FileNotFoundError:
+        return {
+            "available": False,
+            "reason": "nvidia-smi is not installed or not in PATH",
+            "gpus": [],
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "available": False,
+            "reason": "nvidia-smi timed out",
+            "gpus": [],
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    if out.returncode != 0:
+        detail = (out.stderr or out.stdout or "").strip()
+        return {
+            "available": False,
+            "reason": detail or f"nvidia-smi exited with code {out.returncode}",
+            "gpus": [],
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    reader = csv.reader(StringIO(out.stdout.strip()))
+    gpu_rows: list[dict[str, object]] = []
+    for row in reader:
+        if len(row) < len(query_fields):
+            continue
+        gpu_rows.append(
+            {
+                "index": _parse_int(row[0]),
+                "name": row[1].strip(),
+                "utilization_gpu": _parse_float(row[2]),
+                "utilization_memory": _parse_float(row[3]),
+                "memory_used_mb": _parse_float(row[4]),
+                "memory_total_mb": _parse_float(row[5]),
+                "temperature_c": _parse_float(row[6]),
+                "power_draw_w": _parse_float(row[7]),
+                "power_limit_w": _parse_float(row[8]),
+            }
+        )
+
+    return {
+        "available": True,
+        "reason": None,
+        "gpus": gpu_rows,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 @router.get("/conda-envs")
 async def get_conda_envs(
     conda_bat: str | None = Query(
@@ -125,3 +213,9 @@ async def get_conda_envs(
             "conda_envs": conda_envs,
         }
     )
+
+
+@router.get("/gpu-stats")
+async def get_gpu_stats() -> JSONResponse:
+    """Return GPU utilization summary from nvidia-smi for UI polling."""
+    return JSONResponse(content=_read_gpu_stats())

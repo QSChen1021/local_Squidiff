@@ -59,6 +59,10 @@ Response:
 说明：
 - 当任务尚未生成日志文件（例如训练刚启动）时，也会返回 `200`，`log` 为空字符串。
 
+Live log fallback note:
+- When `job.log_path` has no content yet, backend also checks
+  `backend/artifacts/jobs/{job_id}/logger/log.txt` for running training logs.
+
 ## POST `/api/jobs/{job_id}/cancel`
 
 取消任务。

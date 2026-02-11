@@ -8,9 +8,11 @@ import {
   DatasetRecord,
   getCurrentUser,
   getCondaEnvs,
+  getGpuStats,
   getHealth,
   getJob,
   getJobLog,
+  GpuStatsResponse,
   loginUser,
   logoutUser,
   getModel,
@@ -41,6 +43,13 @@ function parseSelectedClusters(input: string): string[] {
     .split(/[,\n;，；]/g)
     .map((item) => item.trim())
     .filter((item) => item.length > 0);
+}
+
+function clampPercent(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(100, value));
 }
 
 export function App() {
@@ -82,6 +91,8 @@ export function App() {
   const [job, setJob] = useState<JobRecord | null>(null);
   const [jobLog, setJobLog] = useState<string>("");
   const [liveJobLog, setLiveJobLog] = useState<string>("");
+  const [gpuStats, setGpuStats] = useState<GpuStatsResponse | null>(null);
+  const [gpuStatsError, setGpuStatsError] = useState<string | null>(null);
   const [model, setModel] = useState<ModelRecord | null>(null);
   const [result, setResult] = useState<ResultRecord | null>(null);
 
@@ -200,6 +211,27 @@ export function App() {
     const interval = window.setInterval(tick, 2500);
     return () => window.clearInterval(interval);
   }, [job]);
+
+  useEffect(() => {
+    if (job?.status !== "running") {
+      setGpuStats(null);
+      setGpuStatsError(null);
+      return;
+    }
+    const tick = () => {
+      getGpuStats()
+        .then((stats) => {
+          setGpuStats(stats);
+          setGpuStatsError(null);
+        })
+        .catch((err: unknown) => {
+          setGpuStatsError(err instanceof Error ? err.message : String(err));
+        });
+    };
+    tick();
+    const interval = window.setInterval(tick, 3000);
+    return () => window.clearInterval(interval);
+  }, [job?.id, job?.status]);
 
   useEffect(() => {
     if (
@@ -447,6 +479,7 @@ export function App() {
       setAuthToken(payload.access_token);
       setAuthUser(payload.user);
       setAuthPassword("");
+      setHasEntered(true);
     } catch (err: unknown) {
       const raw = err instanceof Error ? err.message : String(err);
       let msg = raw;
@@ -486,13 +519,13 @@ export function App() {
     prepare: "500×500 预处理中…",
     train: "提交训练中…"
   };
-  const isJobRunning =
+  const isJobActive =
     job != null && (job.status === "queued" || job.status === "running");
-  const canCancelTrain = isJobRunning && !cancelBusy;
-  const showTaskFeedback = busyStep !== null || isJobRunning;
+  const canCancelTrain = job?.status === "running" && !cancelBusy;
+  const showTaskFeedback = busyStep !== null || isJobActive;
   const taskLabel = busyStep
     ? taskLabelMap[busyStep] ?? "处理中…"
-    : isJobRunning
+    : isJobActive
       ? "训练运行中…"
       : "";
 
@@ -632,6 +665,16 @@ export function App() {
 
       <section className="panel">
         <h2>1) 上传数据</h2>
+        <div className="inline-guide-entry">
+          <a
+            className="guide-link-btn"
+            href={buildApiUrl("/api/auth/user-guide")}
+            target="_blank"
+            rel="noreferrer"
+          >
+            User Guide
+          </a>
+        </div>
         <div className="form-grid">
           <label>
             数据名称 <ParamTooltip text={PARAM_TOOLTIPS["数据名称"]} />
@@ -1088,6 +1131,64 @@ export function App() {
               <span>ended</span>
               <code>{formatTime(job.ended_at)}</code>
             </div>
+            {job.status === "running" ? (
+              <section className="gpu-panel" aria-live="polite" aria-label="GPU stats">
+                <div className="gpu-panel-head">
+                  <h3>GPU Runtime</h3>
+                  <span className="gpu-pulse" />
+                  <span className="gpu-updated">
+                    {gpuStats ? `updated ${formatTime(gpuStats.updated_at)}` : "polling..."}
+                  </span>
+                </div>
+                {gpuStatsError ? <p className="error">{gpuStatsError}</p> : null}
+                {gpuStats?.available === false ? (
+                  <p className="hint">nvidia-smi unavailable: {gpuStats.reason ?? "unknown"}</p>
+                ) : null}
+                {gpuStats?.available && gpuStats.gpus.length > 0 ? (
+                  <div className="gpu-grid">
+                    {gpuStats.gpus.map((gpu) => {
+                      const gpuUtil = clampPercent(gpu.utilization_gpu ?? 0);
+                      const memPct =
+                        gpu.memory_total_mb && gpu.memory_total_mb > 0
+                          ? clampPercent((100 * (gpu.memory_used_mb ?? 0)) / gpu.memory_total_mb)
+                          : 0;
+                      return (
+                        <article key={`${gpu.index ?? "gpu"}-${gpu.name}`} className="gpu-card">
+                          <p className="gpu-title">
+                            GPU {gpu.index ?? "-"}: {gpu.name}
+                          </p>
+                          <div className="gpu-row">
+                            <span>Compute</span>
+                            <strong>{Math.round(gpuUtil)}%</strong>
+                          </div>
+                          <div className="gpu-meter">
+                            <span style={{ width: `${gpuUtil}%` }} />
+                          </div>
+                          <div className="gpu-row">
+                            <span>VRAM</span>
+                            <strong>
+                              {gpu.memory_used_mb ?? 0}/{gpu.memory_total_mb ?? 0} MB
+                            </strong>
+                          </div>
+                          <div className="gpu-meter gpu-meter-mem">
+                            <span style={{ width: `${memPct}%` }} />
+                          </div>
+                          <div className="gpu-meta">
+                            <span>mem util: {Math.round(gpu.utilization_memory ?? 0)}%</span>
+                            <span>temp: {gpu.temperature_c ?? "-"}C</span>
+                            <span>
+                              power: {gpu.power_draw_w ?? "-"} / {gpu.power_limit_w ?? "-"} W
+                            </span>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="hint">Waiting for GPU metrics...</p>
+                )}
+              </section>
+            ) : null}
             {job.status === "canceled" ? (
               <p className="error">任务已由用户停止。</p>
             ) : null}

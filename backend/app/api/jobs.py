@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from ..core.config import settings
 from ..runtime import job_queue, store
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
@@ -66,18 +67,52 @@ async def get_job_log(job_id: str) -> dict[str, str]:
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
+    def _read_tail(path: Path) -> str:
+        if not path.exists() or not path.is_file():
+            return ""
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return ""
+        if len(text) > 20000:
+            text = text[-20000:]
+        return text
+
+    candidates: list[Path] = []
     log_path = job.get("log_path")
-    if not isinstance(log_path, str):
+    if isinstance(log_path, str) and log_path.strip():
+        primary = Path(log_path)
+        candidates.append(primary)
+        candidates.append(primary.parent / "logger" / "log.txt")
+    else:
+        primary = None
+
+    candidates.append(settings.artifact_dir / "jobs" / job_id / "logger" / "log.txt")
+    candidates.append(settings.artifact_dir / "jobs" / job_id / "train.log")
+
+    seen: set[str] = set()
+    existing: list[Path] = []
+    for candidate in candidates:
+        key = str(candidate.resolve()) if candidate.exists() else str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        if candidate.exists():
+            existing.append(candidate)
+
+    if not existing:
         return {"log": ""}
 
-    path = Path(log_path)
-    if not path.exists():
-        return {"log": ""}
+    primary_text = _read_tail(existing[0])
+    if primary_text.strip():
+        return {"log": primary_text}
 
-    text = path.read_text(encoding="utf-8", errors="replace")
-    if len(text) > 20000:
-        text = text[-20000:]
-    return {"log": text}
+    for path in existing[1:]:
+        fallback_text = _read_tail(path)
+        if fallback_text.strip():
+            return {"log": fallback_text}
+
+    return {"log": primary_text}
 
 
 @router.post("/{job_id}/cancel")

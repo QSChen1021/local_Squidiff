@@ -255,6 +255,12 @@ body {
   transform: translateY(-1px);
 }
 
+.inline-guide-entry {
+  margin: 0.15rem 0 0.75rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .landing-health {
   margin: 0;
   color: var(--accent);
@@ -477,6 +483,117 @@ body {
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+.gpu-panel {
+  margin-top: 0.75rem;
+  border: 1px solid rgba(15, 108, 130, 0.25);
+  border-radius: 10px;
+  padding: 0.75rem;
+  background:
+    radial-gradient(circle at 95% 8%, rgba(79, 216, 232, 0.16), transparent 35%),
+    linear-gradient(135deg, #f4fbfd 0%, #edf7fa 100%);
+}
+
+.gpu-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.55rem;
+}
+
+.gpu-panel-head h3 {
+  font-size: 0.92rem;
+  margin: 0;
+  color: #0f5f72;
+}
+
+.gpu-updated {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: #355962;
+}
+
+.gpu-pulse {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #1ab57f;
+  box-shadow: 0 0 0 rgba(26, 181, 127, 0.5);
+  animation: gpu-pulse-ring 1.6s ease-out infinite;
+}
+
+@keyframes gpu-pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(26, 181, 127, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(26, 181, 127, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(26, 181, 127, 0);
+  }
+}
+
+.gpu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.6rem;
+}
+
+.gpu-card {
+  border: 1px solid rgba(15, 108, 130, 0.2);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.86);
+  padding: 0.55rem 0.6rem;
+}
+
+.gpu-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.84rem;
+  color: #0f4963;
+  font-weight: 700;
+}
+
+.gpu-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.82rem;
+  color: #214651;
+}
+
+.gpu-row strong {
+  font-variant-numeric: tabular-nums;
+  color: #0e3946;
+}
+
+.gpu-meter {
+  margin: 0.2rem 0 0.45rem;
+  height: 7px;
+  border-radius: 99px;
+  background: #d7e7ee;
+  overflow: hidden;
+}
+
+.gpu-meter span {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #17a3bf, #0f6c82);
+  transition: width 240ms ease;
+}
+
+.gpu-meter-mem span {
+  background: linear-gradient(90deg, #4e9fff, #3567d6);
+}
+
+.gpu-meta {
+  margin-top: 0.2rem;
+  display: grid;
+  gap: 0.12rem;
+  font-size: 0.75rem;
+  color: #466975;
 }
 
 .form-grid {

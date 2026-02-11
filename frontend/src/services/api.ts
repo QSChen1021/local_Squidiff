@@ -359,10 +359,33 @@ export type CondaEnvsResponse = {
   conda_envs: string[];
 };
 
+export type GpuStat = {
+  index: number | null;
+  name: string;
+  utilization_gpu: number | null;
+  utilization_memory: number | null;
+  memory_used_mb: number | null;
+  memory_total_mb: number | null;
+  temperature_c: number | null;
+  power_draw_w: number | null;
+  power_limit_w: number | null;
+};
+
+export type GpuStatsResponse = {
+  available: boolean;
+  reason: string | null;
+  gpus: GpuStat[];
+  updated_at: string;
+};
+
 export async function getCondaEnvs(condaBat?: string): Promise<CondaEnvsResponse> {
   const path =
     condaBat != null && condaBat !== ""
       ? `/api/runtime/conda-envs?conda_bat=${encodeURIComponent(condaBat)}`
       : "/api/runtime/conda-envs";
   return requestJson<CondaEnvsResponse>(path);
+}
+
+export async function getGpuStats(): Promise<GpuStatsResponse> {
+  return requestJson<GpuStatsResponse>("/api/runtime/gpu-stats");
 }

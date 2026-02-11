@@ -49,7 +49,12 @@ Response:
 
 ## GET `/api/auth/user-guide`
 
-Download/view frontend user guide markdown file.
+Render frontend user guide in browser-friendly HTML.
+
+Query:
+- `raw` (bool, optional, default `false`)
+  - `false`: return rendered HTML page
+  - `true`: return original markdown file stream
 
 Response:
-- `200 OK` -> markdown file stream
+- `200 OK` -> rendered HTML (default) or markdown stream (`raw=true`)

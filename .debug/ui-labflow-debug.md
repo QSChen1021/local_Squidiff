@@ -139,3 +139,64 @@
     - logout ºó `GET /api/auth/me` -> 401
     - `GET /api/auth/user-guide` -> 200
     - Î´µÇÂ¼·ÃÎÊ `GET /api/jobs` -> 401
+
+### [2026-02-11 16:31 +08:00] ÈÎÎñÂÖÑ¯ÌåÑéÔöÇ¿£ºGPU ÊµÊ±¿´°å + µÇÂ¼Ö±´ïÁ÷³Ì + ÈÕÖ¾ÔçÏÔ
+- ÎÊÌâÃèÊö
+  - ÓÃ»§Ï£ÍûÂÖÑ¯½×¶ÎÓĞ¸üÖ±¹Û·´À¡£¨¶¯»­»òÏÔ¿¨×´Ì¬£©£¬²¢ÇÒÈÕÖ¾²»ÒªµÈ¡°Í£Ö¹ÈÎÎñ¡±ºó²Å³öÏÖ¡£
+  - µÇÂ¼ºóÈÔĞèÔÙµã¡°¿ªÊ¼·ÖÎö¡±£¬Á÷³Ì²»¹»Ë³»¬¡£
+  - Êı¾İÌá½»Ò³È±ÉÙÓÃ»§ËµÃ÷ÊéÈë¿Ú¡£
+- ¸ùÒò¶¨Î»
+  - Ç°¶ËÎ´½ÓÈë GPU ÂÖÑ¯Êı¾İÔ´¡£
+  - µÇÂ¼³É¹¦Ö»ÉèÖÃ token/user£¬Î´ÇĞ»» `hasEntered=true`¡£
+  - ÈÎÎñÈÕÖ¾½Ó¿ÚÓÅÏÈ¶ÁÈ¡ `train.log`£¬ÑµÁ·ÔçÆÚ¸ÃÎÄ¼ş¿ÉÄÜÎª¿Õ£¬µ¼ÖÂÇ°¶ËÏÔÊ¾¡°µÈ´ıÈÕÖ¾¡±¡£
+- ½â¾ö·½°¸
+  - ºó¶ËĞÂÔö `GET /api/runtime/gpu-stats`£¨`nvidia-smi` ½âÎö£©¡£
+  - Ç°¶ËÔÚÈÎÎñ `running` Ê±ÂÖÑ¯ GPU Ö¸±ê²¢Õ¹Ê¾ `GPU Runtime` ¿¨Æ¬£¨º¬Âö³å¶¯»­ºÍ×ÊÔ´Ìõ£©¡£
+  - µÇÂ¼³É¹¦ºó×Ô¶¯ `setHasEntered(true)` Ö±´ï·ÖÎöÒ³¡£
+  - ÔÚ `1) ÉÏ´«Êı¾İ` Ãæ°åĞÂÔö `User Guide` °´Å¥¡£
+  - `GET /api/jobs/{job_id}/log` Ôö¼Ó fallback£ºµ± `job.log_path` ÄÚÈİÎª¿ÕÊ±£¬»ØÍË¶ÁÈ¡ `backend/artifacts/jobs/{job_id}/logger/log.txt`¡£
+  - Í£Ö¹ÑµÁ·°´Å¥½öÔÚ `running` ÏÔÊ¾£¬²»ÔÚ `queued` ÏÔÊ¾¡£
+- ´úÂë±ä¸ü£¨ÎÄ¼ş£©
+  - `backend/app/api/runtime.py`
+  - `backend/app/api/jobs.py`
+  - `frontend/src/services/api.ts`
+  - `frontend/src/App.tsx`
+  - `frontend/src/styles/tokens.css`
+  - `docs/api/runtime.md`£¨ĞÂÔö£©
+  - `docs/api/auth.md`
+  - `docs/api/jobs.md`
+  - `docs/LabFlowÇ°¶ËÓÃ»§²Ù×÷ËµÃ÷.md`
+- Checkfix ½á¹û
+  - `ruff format --check backend/app backend/tests` -> Í¨¹ı£¨ÏÈ×Ô¶¯¸ñÊ½»¯ `backend/app/api/auth.py`£©
+  - `ruff check backend/app backend/tests` -> Í¨¹ı
+  - `npm run lint`£¨frontend£©-> Í¨¹ı
+  - `npm run build`£¨frontend£©-> Í¨¹ı
+- ²¿Êğ/ÎÄµµÁª¶¯¼ì²é
+  - ÒÑ¼ì²é²¿ÊğÎÄµµ£º±¾´Î²»ĞÂÔö²¿ÊğÃüÁî£¬½öĞÂÔöÔËĞĞÊ± API ÓëÇ°¶ËÕ¹Ê¾£¬ÎŞĞèĞŞ¸Ä `docs/²¿ÊğÎÄµµ.md`¡£
+
+### [2026-02-11 16:45 +08:00] ä¿®å¤ï¼š/api/auth/user-guide æ‰“ä¸å¼€ + æ–‡æ¡£ä¹±ç  + å‰ç«¯è¿æ¥æ‹’ç»
+- é—®é¢˜ç°è±¡
+  - å‰ç«¯æ§åˆ¶å°å¤§é‡ `ERR_CONNECTION_REFUSED`ï¼ˆ`/api/health`ã€`/api/auth/me`ã€`/api/auth/register`ï¼‰ã€‚
+  - `http://localhost:8000/api/auth/user-guide` æ— æ³•è®¿é—®ã€‚
+  - `docs/LabFlowå‰ç«¯ç”¨æˆ·æ“ä½œè¯´æ˜.md` ååŠæ®µä¹±ç ã€‚
+- æ ¹å› 
+  1. åç«¯å¯åŠ¨å¤±è´¥ï¼š`backend/app/api/auth.py` ä¸­ `user_guide` è¿”å›ç±»å‹æ ‡æ³¨ä¸º `FileResponse | HTMLResponse`ï¼ŒFastAPI åœ¨è·¯ç”±å»ºæ¨¡æ—¶æŠ¥é”™å¹¶é€€å‡ºã€‚
+  2. ç”¨æˆ·è¯´æ˜ä¹¦æ–‡ä»¶ç¼–ç å·²æŸåï¼Œå¯¼è‡´ `/api/auth/user-guide` è¿”å› `User guide encoding is not supported`ã€‚
+- ä¿®å¤
+  1. `backend/app/api/auth.py`
+     - `@router.get("/user-guide", response_model=None)`
+     - è¿”å›ç±»å‹æ”¹ä¸º `Response`ï¼Œé¿å… FastAPI å°†å“åº”ç±» Union å½“æˆ Pydantic å­—æ®µã€‚
+  2. å½»åº•é‡å»º `docs/LabFlowå‰ç«¯ç”¨æˆ·æ“ä½œè¯´æ˜.md`
+     - ä»¥ UTF-8 é‡å†™æ•´ä»½æ–‡æ¡£ï¼Œè¦†ç›–ç™»å½•ã€ä¸Šä¼ ã€æ ¡éªŒã€è®­ç»ƒã€GPU çœ‹æ¿ã€å¸¸è§æ•…éšœä¸å›æ»šã€‚
+- éªŒè¯
+  - æœ¬åœ°å¯åŠ¨åç«¯å¹¶è°ƒç”¨ï¼š
+    - `GET /api/health` -> 200
+    - `GET /api/auth/user-guide` -> 200ï¼ˆHTMLï¼‰
+    - `GET /api/auth/user-guide?raw=true` -> 200ï¼ˆMarkdownï¼‰
+  - Checkfixï¼š
+    - `ruff format --check backend/app backend/tests` é€šè¿‡
+    - `ruff check backend/app backend/tests` é€šè¿‡
+    - `npm run lint` é€šè¿‡
+    - `npm run build` é€šè¿‡
+- ç”¨æˆ·ä¾§æ“ä½œæç¤º
+  - å‡ºç° `ERR_CONNECTION_REFUSED` æ—¶å…ˆç¡®è®¤åç«¯å·²è¿è¡Œåœ¨ `8000` ç«¯å£ã€‚
