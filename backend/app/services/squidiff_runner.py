@@ -56,11 +56,11 @@ class SquidiffRunner:
             str(params.get("batch_size", 64)),
             "--lr",
             str(params.get("lr", 1e-4)),
-            "--use_drug_structure",
-            str(params.get("use_drug_structure", False)),
         ]
-        if params.get("control_data_path"):
-            cmd.extend(["--control_data_path", params["control_data_path"]])
+        if params.get("use_drug_structure"):
+            cmd.extend(["--use_drug_structure", "True"])
+            if params.get("control_data_path"):
+                cmd.extend(["--control_data_path", params["control_data_path"]])
 
         proc = subprocess.run(
             cmd,
@@ -73,8 +73,17 @@ class SquidiffRunner:
         self._write_log(log_path, proc.stderr)
 
         if proc.returncode != 0:
+            tail = (proc.stderr or "").strip() or (proc.stdout or "").strip()
+            if not tail and log_path.exists():
+                try:
+                    tail = log_path.read_text(encoding="utf-8", errors="replace").strip()
+                except OSError:
+                    pass
+            if len(tail) > 1500:
+                tail = tail[-1500:]
             raise RuntimeError(
                 f"Training command failed with exit code {proc.returncode}"
+                + (f". Last output:\n{tail}" if tail else "")
             )
 
         model_path = self._discover_model_path(checkpoint_dir)

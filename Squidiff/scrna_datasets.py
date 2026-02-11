@@ -2,14 +2,17 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import scanpy as sc
 import numpy as np
-from rdkit import Chem
-from rdkit.Chem import AllChem
+
 
 def Drug_dose_encoder(drug_SMILES_list: list, dose_list: list, num_Bits=1024, comb_num=1):
     """
     adopted from PRnet @Author: Xiaoning Qi.
-    Encode SMILES of drug to rFCFP fingerprint
+    Encode SMILES of drug to rFCFP fingerprint.
+    Requires rdkit when use_drug_structure=True.
     """
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
+
     drug_len = len(drug_SMILES_list)
     fcfp4_array = np.zeros((drug_len, num_Bits))
 

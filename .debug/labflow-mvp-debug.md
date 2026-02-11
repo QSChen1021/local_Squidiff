@@ -43,6 +43,8 @@
 - 全流程（转换→训练→预测→可视化报告）：`scripts/run_full_train_predict_viz_windows.py`。建议后端设置 `LABFLOW_DRY_RUN=true` 以快速跑通；报告输出到 `scripts/output/full_flow_report/`（summary.json + pca_scatter.png、heatmap_top_var_genes.png）。
 - **端口与 R 转换**：若 8000 被占用，可在其它端口启动后端并设 `LABFLOW_BASE_URL`。若 validate 报「conda.bat 不是内部或外部命令」，说明当前后端进程是旧代码，需**重启后端**以加载 R 转换的临时 .bat 修复（见 2026-02-11 Windows 全自动 500×500 测试条目）。
 - **真实训练 vs dry_run**：后端设置 `LABFLOW_DRY_RUN=true` 时，训练不执行（只写占位 `model.pt`），预测用随机矩阵，图会正常生成。要得到真实训练出的模型，需**不设或关闭** `LABFLOW_DRY_RUN` 后重启后端再跑全流程；真实模型在 `backend/artifacts/jobs/<train_job_id>/checkpoints/` 下。
+- **训练失败 ModuleNotFoundError: rdkit**：当 `use_drug_structure=False` 时，Squidiff 不需 rdkit。已在 `Squidiff/scrna_datasets.py` 中将 rdkit 改为在 `Drug_dose_encoder` 内按需导入，避免无药物结构时因缺 rdkit 导致训练启动失败。训练失败时后端会在 job 的 error_msg 及 train.log 中保留子进程 stderr 末尾，便于排查。
+- **训练 use_drug_structure 被误传为 True**：runner 原先传 `--use_drug_structure str(False)` 即 `"False"`，argparse 解析为 True，导致脚本去读空的 control_data_path 报 OSError。已改为仅当 `params["use_drug_structure"]` 为真时才追加 `--use_drug_structure True` 与 `--control_data_path`，否则不传，使用 train_squidiff 默认 False。失败时若子进程无 stderr/stdout，则从已写入的 train.log 读末尾作为错误详情。
 
 ## Context Network
 - File layout
@@ -368,6 +370,21 @@
 - Checkfix：`ruff check` / `ruff format` 脚本通过。
 - Impact assessment
 - 一条命令可验证「转换→500×500→训练→预测→可视化报告」全流程；dry_run 下无需 GPU、数分钟内完成。
+
+### [2026-02-11] 真实训练失败：rdkit 按需导入 + 训练错误信息增强
+- Problem
+- 关闭 LABFLOW_DRY_RUN 后跑全流程，训练子进程退出码 1，仅报 "Training command failed with exit code 1"，无法直接看到 train_squidiff.py 的报错。
+- Root cause
+- `Squidiff/scrna_datasets.py` 顶层 `from rdkit import Chem`，在 use_drug_structure=False 时也会触发导入，本机未安装 rdkit 导致 ModuleNotFoundError。Runner 未把子进程 stderr 写入异常信息。
+- Solution
+- 将 rdkit/Chem 导入移入 `Drug_dose_encoder` 内（仅 use_drug_structure=True 时调用），使无药物结构训练不依赖 rdkit。Runner 在训练失败时把 proc.stderr（或 stdout）末尾最多 1500 字写入 RuntimeError，便于 job error_msg 与日志排查。
+- Code changes (files/functions)
+- `Squidiff/scrna_datasets.py`（rdkit 按需导入）
+- `backend/app/services/squidiff_runner.py`（run_train 失败时附带子进程输出）
+- Verification results
+- `ruff check` 通过。
+- Impact assessment
+- 无 rdkit 环境下 use_drug_structure=False 的训练可正常启动；后续若训练仍失败，错误信息会直接包含子进程输出，无需单独查 train.log。
 
 ## Open Issues
 - Real-world Seurat conversion relies on local R/SeuratDisk availability.
