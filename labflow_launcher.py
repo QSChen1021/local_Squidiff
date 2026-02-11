@@ -32,6 +32,7 @@ WINDOWS = os.name == "nt"
 class LauncherConfig:
     project_root: Path
     uv_cmd: str
+    npm_cmd: str
     host: str
     backend_port: int
     frontend_port: int
@@ -127,6 +128,24 @@ def detect_uv_command() -> str:
 
     raise RuntimeError(
         "Missing command `uv`. Install uv, add it to PATH, or set LABFLOW_UV."
+    )
+
+
+def detect_npm_command() -> str:
+    env_cmd = os.getenv("LABFLOW_NPM")
+    if env_cmd:
+        if not _command_exists(env_cmd):
+            raise RuntimeError(
+                f"LABFLOW_NPM is set but command does not exist: {env_cmd}"
+            )
+        return env_cmd
+
+    npm_cmd = shutil.which("npm")
+    if npm_cmd:
+        return npm_cmd
+
+    raise RuntimeError(
+        "Missing command `npm`. Install Node.js, add npm to PATH, or set LABFLOW_NPM."
     )
 
 
@@ -233,13 +252,15 @@ def prepare_frontend_if_needed(config: LauncherConfig) -> None:
 
     dist_dir = frontend_dir / "dist"
     if config.auto_build_frontend or (not dist_dir.exists()):
-        run_checked(["npm", "run", "build"], frontend_dir, "frontend build")
+        run_checked([config.npm_cmd, "run", "build"], frontend_dir, "frontend build")
 
 
 def build_backend_cmd(config: LauncherConfig) -> list[str]:
     cmd = [
         config.uv_cmd,
         "run",
+        "--active",
+        "--no-project",
         "python",
         "-m",
         "uvicorn",
@@ -255,7 +276,11 @@ def build_backend_cmd(config: LauncherConfig) -> list[str]:
 
 
 def build_frontend_cmd(config: LauncherConfig) -> list[str]:
-    base = ["npm", "run", "preview" if config.frontend_mode == "preview" else "dev"]
+    base = [
+        config.npm_cmd,
+        "run",
+        "preview" if config.frontend_mode == "preview" else "dev",
+    ]
     return [
         *base,
         "--",
@@ -335,12 +360,13 @@ def main() -> int:
         project_root = resolve_project_root(args.project_root)
         ensure_project_layout(project_root)
 
-        require_command("npm", "Install Node.js and ensure npm is in PATH.")
         uv_cmd = detect_uv_command()
+        npm_cmd = detect_npm_command()
 
         config = LauncherConfig(
             project_root=project_root,
             uv_cmd=uv_cmd,
+            npm_cmd=npm_cmd,
             host=args.host,
             backend_port=args.backend_port,
             frontend_port=args.frontend_port,
