@@ -330,3 +330,12 @@ python scripts/uat_phase4_seurat_v2.py \
 
 - License: MITï¼ˆè§ `LICENSE`ï¼‰
 - è®ºæ–‡å¼•ç”¨è§ä»“åº“æ ¹ç›®å½•åŽ†å²ä¿¡æ¯ï¼ˆ`README` æ—§ç‰ˆä¸Žè®ºæ–‡æ¡ç›®ï¼‰ã€‚
+
+## 5.5 Ê×Ò³×¢²á/µÇÂ¼£¨ÄÚÍøÇáÁ¿ÈÏÖ¤£©
+
+LabFlow ÒÑÖ§³ÖÇáÁ¿ÕËºÅÏµÍ³£¨SQLite ±¾µØ¿â + °²È«¹þÏ£ÃÜÂë£©£º
+- Ê×Ò³ÏÈ×¢²á/µÇÂ¼£¬ÔÙµã¡°¿ªÊ¼·ÖÎö¡±¡£
+- µÇÂ¼ºóÇ°¶Ë»á×Ô¶¯Ð¯´ø Bearer Token µ÷ÓÃ API¡£
+- ÓÃ»§ËµÃ÷ÊéÈë¿Ú£ºÊ×Ò³¡°ÓÃ»§ËµÃ÷Êé¡±°´Å¥£¨ºó¶Ë `GET /api/auth/user-guide`£©¡£
+
+Ïà¹Ø API ÎÄµµ£º`docs/api/auth.md`

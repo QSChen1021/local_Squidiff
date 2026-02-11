@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { ParamTooltip, PARAM_TOOLTIPS } from "./components/ParamTooltip";
 import {
+  AuthUser,
   buildApiUrl,
   cancelJob,
   createTrainJob,
   DatasetRecord,
+  getCurrentUser,
   getCondaEnvs,
   getHealth,
   getJob,
   getJobLog,
+  loginUser,
+  logoutUser,
   getModel,
   getResultByJob,
   inspectSeurat,
@@ -16,8 +20,10 @@ import {
   ModelRecord,
   prepareTraining,
   PrepareTrainingResult,
+  registerUser,
   ResultRecord,
   SeuratInspectReport,
+  setAuthToken,
   uploadDataset,
   validateDataset,
   ValidationReport
@@ -40,6 +46,12 @@ function parseSelectedClusters(input: string): string[] {
 export function App() {
   const [health, setHealth] = useState("checking");
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [authUsername, setAuthUsername] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   const [datasetFile, setDatasetFile] = useState<File | null>(null);
   const [smilesFile, setSmilesFile] = useState<File | null>(null);
@@ -75,6 +87,7 @@ export function App() {
 
   const [busyStep, setBusyStep] = useState<string | null>(null);
   const [cancelBusy, setCancelBusy] = useState(false);
+  const [hasEntered, setHasEntered] = useState(false);
   const [selectedMetadataColumn, setSelectedMetadataColumn] = useState<string | null>(null);
 
   useEffect(() => {
@@ -87,6 +100,15 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    getCurrentUser()
+      .then((user) => setAuthUser(user))
+      .catch(() => setAuthUser(null));
+  }, []);
+
+  useEffect(() => {
+    if (!authUser) {
+      return;
+    }
     getCondaEnvs()
       .then((res) => {
         const uniqueCandidates = Array.from(new Set(res.conda_bat_candidates));
@@ -124,7 +146,7 @@ export function App() {
         }
       })
       .catch(() => {});
-  }, []);
+  }, [authUser]);
 
   const canValidate = useMemo(() => dataset !== null, [dataset]);
   const parsedSelectedClusters = useMemo(
@@ -408,6 +430,55 @@ export function App() {
     }
   }
 
+  async function onAuthSubmit() {
+    const username = authUsername.trim();
+    const password = authPassword;
+    if (!username || !password) {
+      setAuthError("请输入用户名和密码");
+      return;
+    }
+    setAuthBusy(true);
+    setAuthError(null);
+    try {
+      const payload =
+        authMode === "register"
+          ? await registerUser({ username, password })
+          : await loginUser({ username, password });
+      setAuthToken(payload.access_token);
+      setAuthUser(payload.user);
+      setAuthPassword("");
+    } catch (err: unknown) {
+      const raw = err instanceof Error ? err.message : String(err);
+      let msg = raw;
+      try {
+        const parsed = JSON.parse(raw) as { detail?: string };
+        if (typeof parsed.detail === "string") {
+          msg = parsed.detail;
+        }
+      } catch {
+        // keep raw
+      }
+      setAuthError(msg);
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function onAuthLogout() {
+    setAuthBusy(true);
+    setAuthError(null);
+    try {
+      await logoutUser();
+    } catch {
+      // ignore remote logout failure, still clear local token
+    } finally {
+      setAuthToken(null);
+      setAuthUser(null);
+      setHasEntered(false);
+      setAuthBusy(false);
+    }
+  }
+
   const taskLabelMap: Record<string, string> = {
     upload: "上传中…",
     validate: "校验中…",
@@ -426,7 +497,121 @@ export function App() {
       : "";
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${hasEntered ? "app-shell-entered" : "app-shell-landing"}`}>
+      {!hasEntered ? (
+        <section className="landing-hero panel">
+          <p className="landing-kicker">LabFlow Scientific Workspace</p>
+          <h1>Squidiff Research Console</h1>
+          <p className="landing-subtitle">
+            从单细胞数据上传到训练结果可视化的一体化实验流程。
+            点击入口，立即开始本轮分析。
+          </p>
+          <div className="landing-badges" aria-label="核心能力">
+            <span>Seurat Inspect</span>
+            <span>500x500 Prepare</span>
+            <span>GPU Training</span>
+            <span>Live Logs</span>
+          </div>
+          <div className="landing-grid">
+            <article className="landing-card">
+              <h2>数据质检优先</h2>
+              <p>先校验、后训练，异常在步骤内就近提示，减少反复重跑。</p>
+            </article>
+            <article className="landing-card">
+              <h2>实验过程可观测</h2>
+              <p>任务状态、运行日志、模型与结果资产统一归档追踪。</p>
+            </article>
+            <article className="landing-card">
+              <h2>科研节奏友好</h2>
+              <p>支持 prepared dataset 复用，快速迭代参数与训练批次。</p>
+            </article>
+          </div>
+          <div className="landing-actions">
+            <button
+              type="button"
+              className="enter-analysis-btn"
+              onClick={() => setHasEntered(true)}
+              disabled={!authUser}
+            >
+              开始分析
+            </button>
+            <a
+              className="guide-link-btn"
+              href={buildApiUrl("/api/auth/user-guide")}
+              target="_blank"
+              rel="noreferrer"
+            >
+              用户说明书
+            </a>
+            <p className="landing-health">backend: {health}</p>
+          </div>
+          <div className="auth-panel">
+            <p className="auth-title">账户入口</p>
+            <div className="auth-tabs" role="tablist" aria-label="登录模式">
+              <button
+                type="button"
+                className={authMode === "login" ? "auth-tab active" : "auth-tab"}
+                onClick={() => {
+                  setAuthMode("login");
+                  setAuthError(null);
+                }}
+              >
+                登录
+              </button>
+              <button
+                type="button"
+                className={authMode === "register" ? "auth-tab active" : "auth-tab"}
+                onClick={() => {
+                  setAuthMode("register");
+                  setAuthError(null);
+                }}
+              >
+                注册
+              </button>
+            </div>
+            <div className="auth-fields">
+              <label>
+                用户名
+                <input
+                  value={authUsername}
+                  onChange={(e) => setAuthUsername(e.target.value)}
+                  placeholder="例如: labflow_user"
+                />
+              </label>
+              <label>
+                密码
+                <input
+                  type="password"
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                  placeholder="至少 8 位"
+                />
+              </label>
+            </div>
+            <div className="auth-actions">
+              <button type="button" onClick={onAuthSubmit} disabled={authBusy}>
+                {authBusy ? "提交中..." : authMode === "register" ? "注册并登录" : "登录"}
+              </button>
+              {authUser ? (
+                <button
+                  type="button"
+                  className="auth-ghost-btn"
+                  onClick={onAuthLogout}
+                  disabled={authBusy}
+                >
+                  退出登录
+                </button>
+              ) : null}
+            </div>
+            <p className="auth-state">
+              {authUser ? `当前用户：${authUser.username}` : "未登录，开始分析按钮将保持禁用"}
+            </p>
+            {authError ? <p className="error">{authError}</p> : null}
+          </div>
+          {globalError ? <p className="error">{globalError}</p> : null}
+        </section>
+      ) : (
+        <>
       <header className="hero">
         <h1>Squidiff LabFlow MVP</h1>
         <p>上传 → 校验 → Seurat 检查 → 500x500 预处理 → 训练任务 → 结果页</p>
@@ -964,6 +1149,8 @@ export function App() {
           <p>训练完成后会显示模型与结果信息。</p>
         )}
       </section>
+        </>
+      )}
     </main>
   );
 }

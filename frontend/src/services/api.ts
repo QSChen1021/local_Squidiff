@@ -2,6 +2,18 @@ export type HealthResponse = {
   status: string;
 };
 
+export type AuthUser = {
+  id: number;
+  username: string;
+  created_at: string;
+};
+
+export type AuthResponse = {
+  access_token: string;
+  token_type: "bearer";
+  user: AuthUser;
+};
+
 export type ValidationReport = {
   valid: boolean;
   errors: string[];
@@ -134,8 +146,39 @@ export type ResultRecord = {
 };
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
+const AUTH_TOKEN_KEY = "labflow_auth_token";
 
 type JsonMethod = "GET" | "POST";
+
+function getAuthToken(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return window.localStorage.getItem(AUTH_TOKEN_KEY);
+}
+
+export function setAuthToken(token: string | null): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  if (token && token.trim().length > 0) {
+    window.localStorage.setItem(AUTH_TOKEN_KEY, token);
+  } else {
+    window.localStorage.removeItem(AUTH_TOKEN_KEY);
+  }
+}
+
+function buildRequestHeaders(hasJsonBody: boolean): HeadersInit | undefined {
+  const headers: Record<string, string> = {};
+  if (hasJsonBody) {
+    headers["Content-Type"] = "application/json";
+  }
+  const token = getAuthToken();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return Object.keys(headers).length > 0 ? headers : undefined;
+}
 
 async function requestJson<T>(
   path: string,
@@ -144,7 +187,7 @@ async function requestJson<T>(
 ): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
+    headers: buildRequestHeaders(body != null),
     body: body ? JSON.stringify(body) : undefined
   });
 
@@ -157,6 +200,29 @@ async function requestJson<T>(
 
 export function buildApiUrl(path: string): string {
   return `${API_BASE}${path}`;
+}
+
+export async function registerUser(input: {
+  username: string;
+  password: string;
+}): Promise<AuthResponse> {
+  return requestJson<AuthResponse>("/api/auth/register", "POST", input);
+}
+
+export async function loginUser(input: {
+  username: string;
+  password: string;
+}): Promise<AuthResponse> {
+  return requestJson<AuthResponse>("/api/auth/login", "POST", input);
+}
+
+export async function getCurrentUser(): Promise<AuthUser> {
+  const payload = await requestJson<{ user: AuthUser }>("/api/auth/me");
+  return payload.user;
+}
+
+export async function logoutUser(): Promise<void> {
+  await requestJson<{ status: string }>("/api/auth/logout", "POST");
 }
 
 export async function getHealth(): Promise<HealthResponse> {
@@ -178,6 +244,7 @@ export async function uploadDataset(input: {
   }
   const response = await fetch(`${API_BASE}/api/datasets/upload`, {
     method: "POST",
+    headers: buildRequestHeaders(false),
     body: formData
   });
   if (!response.ok) {

@@ -84,3 +84,58 @@
     - `python -m black backend/app/api/runtime.py backend/app/services/seurat_inspector.py --check`
     - `ruff format --check backend/app backend/tests`
     - `ruff check backend/app backend/tests`
+
+### [2026-02-11] 动画首页 + 开始分析入口（科研视觉升维）
+- 艺术指导：
+  - Mood: 理性、精密、可观测。
+  - Metaphor: “实验台上的光学扫描屏”，先展示系统能力，再进入分析流程。
+- 视觉审计与策略：
+  1. 空间：原页面打开即进入多面板，信息密度高；新增 Landing 首屏，分层展示能力点与入口动作。
+  2. 张力：加入扫描高光、网格纹理、卡片呼吸动画，增强科研仪表感。
+  3. 质感：多层渐变 + 半透明卡片 + 轻阴影，避免纯平界面。
+  4. 微交互：入口按钮 hover 提升、流程页进入时上浮过渡。
+- 实施记录：
+  - `frontend/src/App.tsx`：新增 `hasEntered` 入口状态；加入动画首页 DOM；点击“开始分析”后渲染原有 1~7 流程。
+  - `frontend/src/styles/tokens.css`：新增 landing 相关 token 与样式（网格层、扫描动画、卡片呼吸、入口按钮动效、移动端适配）。
+- 用户说明书更新：
+  - `docs/LabFlow前端用户操作说明.md` 新增“动画首页入口（开始分析）”章节（目的、操作、预期、常见问题、回滚）。
+- 部署文档联动检查：
+  - 已检查 `docs/部署文档.md`，本次仅前端视觉与入口交互变化，不涉及部署命令与环境变量，无需改动。
+- Checkfix：
+  - `npm run lint`（frontend）通过。
+  - `npm run build`（frontend）通过。
+
+### [2026-02-11] 首页注册/登录 + 用户说明书入口（内网轻量认证）
+- 目标：在动画首页加入可直接使用的账号入口，登录后进入分析流程，并把用户说明书按钮放在首页。
+- 后端实现（API-First）：
+  - 新增 `backend/app/services/auth_service.py`：SQLite 本地库 + PBKDF2-SHA256 密码哈希 + session token。
+  - 新增 `backend/app/api/auth.py`：`/api/auth/register`、`/api/auth/login`、`/api/auth/me`、`/api/auth/logout`、`/api/auth/user-guide`。
+  - 新增 `backend/app/auth.py`：Bearer 解析与认证依赖。
+  - `backend/app/main.py` 路由挂载：业务 API 统一走 `require_auth`（可由 `LABFLOW_AUTH_REQUIRED` 控制）。
+  - `backend/app/core/config.py` 增加认证配置：`LABFLOW_AUTH_REQUIRED`、`LABFLOW_AUTH_DB_PATH`、`LABFLOW_AUTH_SESSION_TTL_HOURS`。
+- 前端实现（首页入口与交互）：
+  - `frontend/src/App.tsx`：首页新增注册/登录表单、登录态显示、退出登录、未登录禁用“开始分析”。
+  - 首页“用户说明书”按钮改为后端在线文档接口：`/api/auth/user-guide`。
+  - `frontend/src/services/api.ts`：新增 auth API 封装与 token 本地存取；请求自动携带 Bearer Token。
+  - `frontend/src/styles/tokens.css`：新增 auth panel、tabs、按钮样式。
+- 文档同步：
+  - 新增 `docs/api/auth.md`。
+  - 更新 `docs/LabFlow前端用户操作说明.md`（新增首页注册/登录步骤与规则）。
+  - 更新 `docs/部署文档.md`（新增认证相关环境变量）。
+  - 更新 `README.md`（新增登录认证说明入口）。
+- 用户可理解性检查结论：
+  - 结论：基本可让新手上手。说明书已覆盖“先登录再开始分析”的路径、账号规则、常见报错。
+  - 仍建议（后续可做）：补一张“注册->登录->开始分析”流程截图，进一步降低首次认知成本。
+- Checkfix：
+  - `ruff check backend/app backend/tests` 通过。
+  - `ruff format --check backend/app backend/tests` 通过。
+  - `npm run lint`（frontend）通过。
+  - `npm run build`（frontend）通过。
+  - `python -m pytest -q backend/tests/test_auth_api.py` 未执行（当前环境缺少 pytest）。
+  - 运行时 smoke（设置 `LABFLOW_AUTH_DB_PATH=.debug/auth_smoke.db`）通过：
+    - `POST /api/auth/register` -> 200
+    - `GET /api/auth/me` -> 200
+    - `POST /api/auth/logout` -> 200
+    - logout 后 `GET /api/auth/me` -> 401
+    - `GET /api/auth/user-guide` -> 200
+    - 未登录访问 `GET /api/jobs` -> 401
