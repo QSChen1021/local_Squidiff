@@ -248,3 +248,36 @@
   - `npm run build`（frontend）：通过
   - `python -m py_compile labflow_launcher.py`：通过
   - `ruff format --check labflow_launcher.py` + `ruff check labflow_launcher.py`：通过（RUFF_CACHE_DIR 临时目录）
+
+### [2026-02-11 18:45 +08:00] 卡住任务处理：一键清盘 + 进入流程页 Logout
+- 问题描述
+  - 登录后看到历史测试任务显示 running（4 个），无法停止也无法删除。
+  - 进入分析页后缺少明显 Logout 入口，不便切换账号。
+- 根因定位
+  - 后端重启后，部分任务可能残留为 `running/queued` 但实际进程已不存在（stale 状态）。
+  - 前端刷新列表时，当前选中任务被删除后仍保留旧内存对象，导致“幽灵任务”观感。
+  - 分析页侧边栏未放置 logout 操作入口。
+- 解决方案
+  1. 后端任务容错与清盘
+     - `POST /api/jobs/{job_id}/cancel`：若 `running` 但 PID 不存在，自动标记为 `canceled`。
+     - `DELETE /api/jobs/{job_id}`：对 stale `running/queued` 允许删除；真实运行中任务仍禁止直接删除。
+     - 新增 `POST /api/jobs/flush`：一键清盘（默认清理 active 任务），可强制尝试终止进程并级联删除模型/结果记录与 artifacts。
+  2. 前端 Task Center
+     - 新增 `One-click clear` 按钮（调用 `/api/jobs/flush`）。
+     - 新增 `Logout` 按钮（在分析页即可退出并切换账号）。
+     - 修复任务刷新逻辑：当前任务若已不存在，自动清空选中态，避免幽灵 running。
+  3. 文档同步
+     - `docs/api/jobs.md`：补充 stale-cancel 与 flush API。
+     - `docs/LabFlow前端用户操作说明.md`：补充 Task Center 的一键清盘与 logout。
+- 代码变更
+  - `backend/app/api/jobs.py`
+  - `frontend/src/services/api.ts`
+  - `frontend/src/App.tsx`
+  - `frontend/src/styles/tokens.css`
+  - `docs/api/jobs.md`
+  - `docs/LabFlow前端用户操作说明.md`
+- Checkfix
+  - `ruff format --check backend/app backend/tests`：通过
+  - `ruff check backend/app backend/tests`：通过
+  - `npm run lint`：通过
+  - `npm run build`：通过

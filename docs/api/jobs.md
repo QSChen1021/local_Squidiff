@@ -77,6 +77,10 @@ Response:
 - `400 Bad Request` -> `Job is already finished: ...`
 - `404 Not Found` -> `Job not found`
 
+Stale-running behavior:
+- If job status is `running` but its process PID no longer exists (e.g. backend restarted),
+  backend will auto-mark it `canceled` and return updated job.
+
 ## GET `/api/jobs`
 
 列出任务（用于前端任务中心侧边栏）。
@@ -103,3 +107,31 @@ Response:
 - `200 OK` -> `{ "deleted": true, "removed_models": number, "removed_results": number }`
 - `400 Bad Request` -> `Job is still active...`
 - `404 Not Found` -> `Job not found`
+
+## POST `/api/jobs/flush`
+
+一键清盘接口（用于清理卡住的测试任务）。
+
+Query:
+- `scope` (string, optional, default `active`)
+  - `active`: 仅清理 `queued/running` 任务
+  - `all`: 清理全部任务
+- `purge_artifacts` (bool, optional, default `true`)
+- `force` (bool, optional, default `true`)
+
+行为：
+- 对运行中任务先尝试取消/终止进程树。
+- 对无进程的“假 running”任务直接标记并清理。
+- 级联删除关联模型/结果记录与（可选）任务 artifacts。
+
+Response:
+- `200 OK` ->
+```json
+{
+  "scope": "active",
+  "deleted_jobs": 4,
+  "removed_models": 2,
+  "removed_results": 2,
+  "skipped_running_jobs": []
+}
+```

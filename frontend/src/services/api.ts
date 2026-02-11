@@ -388,6 +388,28 @@ export async function deleteJob(jobId: string, purgeArtifacts = true): Promise<v
   );
 }
 
+export type FlushJobsResponse = {
+  scope: "active" | "all";
+  deleted_jobs: number;
+  removed_models: number;
+  removed_results: number;
+  skipped_running_jobs: string[];
+};
+
+export async function flushJobs(input?: {
+  scope?: "active" | "all";
+  purgeArtifacts?: boolean;
+  force?: boolean;
+}): Promise<FlushJobsResponse> {
+  const scope = input?.scope ?? "active";
+  const purge = input?.purgeArtifacts ?? true;
+  const force = input?.force ?? true;
+  const path = `/api/jobs/flush?scope=${scope}&purge_artifacts=${
+    purge ? "true" : "false"
+  }&force=${force ? "true" : "false"}`;
+  return requestJson<FlushJobsResponse>(path, "POST");
+}
+
 export async function deleteModel(modelId: string, purgeFiles = true): Promise<void> {
   await requestJson<{ deleted: boolean }>(
     `/api/results/models/${modelId}?purge_files=${purgeFiles ? "true" : "false"}`,

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
+from datetime import datetime, timezone
+import os
 import shutil
+import subprocess
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -10,6 +13,10 @@ from ..core.config import settings
 from ..runtime import job_queue, store
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 class TrainJobPayload(BaseModel):
@@ -64,6 +71,62 @@ def _remove_tree_if_allowed(path: Path) -> None:
         return
     if target.exists() and target.is_dir():
         shutil.rmtree(target, ignore_errors=True)
+
+
+def _is_pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        if os.name == "nt":
+            result = subprocess.run(
+                ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                capture_output=True,
+                text=True,
+                timeout=6,
+                check=False,
+            )
+            output = (result.stdout or "").strip()
+            if not output or "No tasks are running" in output:
+                return False
+            return str(pid) in output
+        os.kill(pid, 0)
+        return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _is_job_actually_running(job: dict[str, object]) -> bool:
+    if job.get("status") != "running":
+        return False
+    pid = job.get("train_pid")
+    return isinstance(pid, int) and _is_pid_alive(pid)
+
+
+def _cascade_delete_job(job_id: str, *, purge_artifacts: bool) -> dict[str, int]:
+    related_model_ids = [
+        str(model.get("id"))
+        for model in store.list_models()
+        if model.get("job_id") == job_id and model.get("id")
+    ]
+    related_result_ids = [
+        str(result.get("id"))
+        for result in store.list_results()
+        if result.get("job_id") == job_id and result.get("id")
+    ]
+
+    for model_id in related_model_ids:
+        store.delete_model(model_id)
+    for result_id in related_result_ids:
+        store.delete_result(result_id)
+    store.delete_job(job_id)
+
+    if purge_artifacts:
+        _remove_tree_if_allowed(settings.artifact_dir / "jobs" / job_id)
+
+    return {
+        "removed_models": len(related_model_ids),
+        "removed_results": len(related_result_ids),
+    }
 
 
 @router.get("/{job_id}")
@@ -139,6 +202,21 @@ async def cancel_job(job_id: str) -> dict[str, object]:
             detail=f"Job is already finished: {job.get('status')}",
         )
 
+    if job.get("status") == "running" and not _is_job_actually_running(job):
+        stale = store.update_job(
+            job_id,
+            {
+                "status": "canceled",
+                "ended_at": _now(),
+                "error_msg": "Canceled stale job (process not found).",
+                "cancel_requested": True,
+                "cancel_signal_sent": False,
+            },
+        )
+        if stale is None:
+            raise HTTPException(status_code=404, detail="Job not found")
+        return {"job": stale}
+
     updated = job_queue.cancel(job_id)
     if updated is None:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -157,37 +235,101 @@ async def delete_job(
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    if job.get("status") in {"queued", "running"}:
-        raise HTTPException(
-            status_code=400,
-            detail="Job is still active. Cancel and wait until it stops before deleting.",
+    status = str(job.get("status") or "")
+    if status in {"queued", "running"}:
+        if _is_job_actually_running(job):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Job is still active. Stop/cancel it first, or use /api/jobs/flush "
+                    "to clear stale tasks."
+                ),
+            )
+        store.update_job(
+            job_id,
+            {
+                "status": "canceled",
+                "ended_at": _now(),
+                "error_msg": "Deleted as stale active job.",
+                "cancel_requested": True,
+            },
         )
 
-    related_model_ids = [
-        str(model.get("id"))
-        for model in store.list_models()
-        if model.get("job_id") == job_id and model.get("id")
-    ]
-    related_result_ids = [
-        str(result.get("id"))
-        for result in store.list_results()
-        if result.get("job_id") == job_id and result.get("id")
-    ]
-
-    for model_id in related_model_ids:
-        store.delete_model(model_id)
-    for result_id in related_result_ids:
-        store.delete_result(result_id)
-
-    store.delete_job(job_id)
-
-    if purge_artifacts:
-        _remove_tree_if_allowed(settings.artifact_dir / "jobs" / job_id)
+    removed = _cascade_delete_job(job_id, purge_artifacts=purge_artifacts)
 
     return {
         "deleted": True,
-        "removed_models": len(related_model_ids),
-        "removed_results": len(related_result_ids),
+        "removed_models": removed["removed_models"],
+        "removed_results": removed["removed_results"],
+    }
+
+
+@router.post("/flush")
+async def flush_jobs(
+    scope: str = Query(
+        "active",
+        pattern="^(active|all)$",
+        description="active: queued/running only; all: delete all jobs",
+    ),
+    purge_artifacts: bool = Query(
+        True,
+        description="If true, remove backend/artifacts/jobs/{job_id} while clearing",
+    ),
+    force: bool = Query(
+        True,
+        description="If true, attempt to kill running process tree before clearing",
+    ),
+) -> dict[str, object]:
+    jobs = store.list_jobs()
+    if scope == "active":
+        target_jobs = [
+            item for item in jobs if item.get("status") in {"queued", "running"}
+        ]
+    else:
+        target_jobs = jobs
+
+    deleted_jobs = 0
+    removed_models = 0
+    removed_results = 0
+    skipped_running: list[str] = []
+
+    for job in target_jobs:
+        job_id = str(job.get("id") or "")
+        if not job_id:
+            continue
+        latest = store.get_job(job_id)
+        if latest is None:
+            continue
+
+        status = str(latest.get("status") or "")
+        if status in {"queued", "running"}:
+            if force:
+                job_queue.cancel(job_id)
+                latest = store.get_job(job_id) or latest
+            if _is_job_actually_running(latest):
+                skipped_running.append(job_id)
+                continue
+            store.update_job(
+                job_id,
+                {
+                    "status": "canceled",
+                    "ended_at": _now(),
+                    "error_msg": "Cleared by one-click flush.",
+                    "cancel_requested": True,
+                },
+            )
+
+        removed = _cascade_delete_job(job_id, purge_artifacts=purge_artifacts)
+        deleted_jobs += 1
+        removed_models += removed["removed_models"]
+        removed_results += removed["removed_results"]
+
+    return {
+        "scope": scope,
+        "deleted_jobs": deleted_jobs,
+        "removed_models": removed_models,
+        "removed_results": removed_results,
+        "skipped_running_jobs": skipped_running,
     }
 
 

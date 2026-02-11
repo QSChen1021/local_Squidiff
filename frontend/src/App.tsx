@@ -9,6 +9,7 @@ import {
   deleteJob,
   deleteModel,
   deleteResult,
+  flushJobs,
   getCurrentUser,
   getCondaEnvs,
   getGpuStats,
@@ -280,7 +281,7 @@ export function App() {
             return matchedCurrent;
           }
           if (!selectPreferred) {
-            return current;
+            return null;
           }
 
           const storedJobId =
@@ -720,6 +721,34 @@ export function App() {
     await loadJobHistory({ selectPreferred: false, showLoading: true });
   }
 
+  async function onFlushActiveJobs() {
+    const ok = window.confirm(
+      "One-click clear all queued/running tasks and related artifacts? This cannot be undone."
+    );
+    if (!ok) {
+      return;
+    }
+    try {
+      const summary = await flushJobs({
+        scope: "active",
+        purgeArtifacts: true,
+        force: true
+      });
+      await loadJobHistory({ selectPreferred: false, showLoading: true });
+      if (summary.skipped_running_jobs.length > 0) {
+        window.alert(
+          `Cleared ${summary.deleted_jobs} tasks, but ${summary.skipped_running_jobs.length} are still running.`
+        );
+      } else {
+        window.alert(
+          `Cleared ${summary.deleted_jobs} tasks (${summary.removed_models} models, ${summary.removed_results} reports).`
+        );
+      }
+    } catch (err: unknown) {
+      setGlobalError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function openJobById(jobId: string) {
     try {
       const existing = jobHistory.find((item) => item.id === jobId);
@@ -927,8 +956,14 @@ export function App() {
           <button type="button" onClick={onStartNewTask} disabled={busyStep !== null}>
             New task
           </button>
+          <button type="button" className="danger-btn" onClick={onFlushActiveJobs}>
+            One-click clear
+          </button>
           <button type="button" className="auth-ghost-btn" onClick={onRefreshJobs}>
             Refresh
+          </button>
+          <button type="button" className="auth-ghost-btn" onClick={onAuthLogout}>
+            Logout
           </button>
         </div>
 

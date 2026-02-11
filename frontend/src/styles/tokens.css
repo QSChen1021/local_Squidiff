@@ -85,12 +85,15 @@ body {
 }
 
 .task-sidebar-actions {
-  display: flex;
-  gap: 0.5rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
 }
 
 .task-sidebar-actions button {
   width: 100%;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.78rem;
 }
 
 .task-list {
