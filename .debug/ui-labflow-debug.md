@@ -204,3 +204,47 @@
   - 所有目标文件 BOM 检查通过。
 - 影响评估
   - 仅编码规范化，不涉及功能逻辑变更。
+
+### [2026-02-11 18:20 +08:00] 任务中心侧边栏升级：任务恢复 + 模型/报告管理 + 删除下载
+- 问题描述
+  - 用户重新登录后无法恢复已在运行的任务视图，容易误提交新任务。
+  - 需要侧边栏统一管理任务、模型、报告，并支持新建、查看、下载、删除。
+- 根因定位
+  - 前端任务状态仅保存在内存，没有登录后任务列表恢复机制。
+  - 后端缺少任务/模型/结果删除接口与模型下载接口。
+- 解决方案
+  1. 前端（Task Center）
+     - 新增侧边栏三块：Jobs / Models / Reports。
+     - Jobs：Open / Delete / New task / Refresh。
+     - Models：Job / Download / Delete。
+     - Reports：Job / Download / Delete。
+     - 登录后自动拉取任务列表并恢复上次任务（localStorage 记录每用户最近 job）。
+     - 周期轮询同步侧边栏数据，状态实时刷新。
+  2. 后端 API
+     - `DELETE /api/jobs/{job_id}`（支持 `purge_artifacts=true`，并清理关联模型/结果记录）。
+     - `GET /api/results/models/{model_id}/download`。
+     - `DELETE /api/results/models/{model_id}`（支持 `purge_files=true`）。
+     - `DELETE /api/results/{result_id}`（支持 `purge_files=true`）。
+  3. 内网访问修正
+     - 前端 API 默认地址改为“跟随当前访问主机:8000”，不再固定 `localhost:8000`。
+- 代码变更
+  - `frontend/src/App.tsx`
+  - `frontend/src/services/api.ts`
+  - `frontend/src/styles/tokens.css`
+  - `backend/app/api/jobs.py`
+  - `backend/app/api/results.py`
+  - `backend/app/storage/state_manager.py`
+- 文档更新
+  - `docs/LabFlow前端用户操作说明.md`（新增 Task Center 使用说明）
+  - `docs/api/jobs.md`（新增列表/删除接口）
+  - `docs/api/results.md`（新增）
+  - `README.md`（新增 results API 文档入口）
+  - `docs/Windows一键启动器.md`（按新启动器逻辑重写）
+  - `docs/部署文档.md`（新增 Windows 启动器章节）
+- Checkfix
+  - `ruff format --check backend/app backend/tests`：通过
+  - `ruff check backend/app backend/tests`：通过
+  - `npm run lint`（frontend）：通过
+  - `npm run build`（frontend）：通过
+  - `python -m py_compile labflow_launcher.py`：通过
+  - `ruff format --check labflow_launcher.py` + `ruff check labflow_launcher.py`：通过（RUFF_CACHE_DIR 临时目录）

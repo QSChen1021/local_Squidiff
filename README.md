@@ -66,6 +66,7 @@ Squidiff 是一个**用扩散模型预测单细胞转录组变化**的工具（�
 - **10 分钟快速走通一遍**：[`docs/实验室10分钟上手.md`](docs/实验室10分钟上手.md)
 - **Seurat 接口与数据流程**：[`docs/api/seurat.md`](docs/api/seurat.md)
 - **任务接口（train/predict/log/cancel）**：[`docs/api/jobs.md`](docs/api/jobs.md)
+- **模型与结果接口（list/download/delete）**：[`docs/api/results.md`](docs/api/results.md)
 - **数据集接口（上传/校验）**：[`docs/api/datasets.md`](docs/api/datasets.md)
 - **UAT 验收清单**：[`docs/UAT_Seurat_V2_检查清单.md`](docs/UAT_Seurat_V2_检查清单.md)
 - **产品目标与模型能力说明**：[`docs/模型能做什么与前端设计理念.md`](docs/模型能做什么与前端设计理念.md)

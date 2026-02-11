@@ -145,7 +145,19 @@ export type ResultRecord = {
   updated_at: string;
 };
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
+function resolveApiBase(): string {
+  const configured = import.meta.env.VITE_API_BASE;
+  if (configured && configured.trim().length > 0) {
+    return configured;
+  }
+  if (typeof window === "undefined") {
+    return "http://localhost:8000";
+  }
+  const protocol = window.location.protocol === "https:" ? "https:" : "http:";
+  return `${protocol}//${window.location.hostname}:8000`;
+}
+
+const API_BASE = resolveApiBase();
 const AUTH_TOKEN_KEY = "labflow_auth_token";
 
 type JsonMethod = "GET" | "POST";
@@ -329,6 +341,11 @@ export async function getJob(jobId: string): Promise<JobRecord> {
   return payload.job;
 }
 
+export async function getJobs(): Promise<JobRecord[]> {
+  const payload = await requestJson<{ items: JobRecord[] }>("/api/jobs");
+  return payload.items;
+}
+
 export async function cancelJob(jobId: string): Promise<JobRecord> {
   const payload = await requestJson<{ job: JobRecord }>(
     `/api/jobs/${jobId}/cancel`,
@@ -352,6 +369,37 @@ export async function getModel(modelId: string): Promise<ModelRecord> {
 export async function getResultByJob(jobId: string): Promise<ResultRecord> {
   const payload = await requestJson<{ result: ResultRecord }>(`/api/results/job/${jobId}`);
   return payload.result;
+}
+
+export async function listModels(): Promise<ModelRecord[]> {
+  const payload = await requestJson<{ items: ModelRecord[] }>("/api/results/models/list");
+  return payload.items;
+}
+
+export async function listResults(): Promise<ResultRecord[]> {
+  const payload = await requestJson<{ items: ResultRecord[] }>("/api/results");
+  return payload.items;
+}
+
+export async function deleteJob(jobId: string, purgeArtifacts = true): Promise<void> {
+  await requestJson<{ deleted: boolean }>(
+    `/api/jobs/${jobId}?purge_artifacts=${purgeArtifacts ? "true" : "false"}`,
+    "DELETE"
+  );
+}
+
+export async function deleteModel(modelId: string, purgeFiles = true): Promise<void> {
+  await requestJson<{ deleted: boolean }>(
+    `/api/results/models/${modelId}?purge_files=${purgeFiles ? "true" : "false"}`,
+    "DELETE"
+  );
+}
+
+export async function deleteResult(resultId: string, purgeFiles = true): Promise<void> {
+  await requestJson<{ deleted: boolean }>(
+    `/api/results/${resultId}?purge_files=${purgeFiles ? "true" : "false"}`,
+    "DELETE"
+  );
 }
 
 export type CondaEnvsResponse = {

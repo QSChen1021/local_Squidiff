@@ -76,3 +76,30 @@ Response:
 - `200 OK` -> `{ "job": JobRecord }`
 - `400 Bad Request` -> `Job is already finished: ...`
 - `404 Not Found` -> `Job not found`
+
+## GET `/api/jobs`
+
+列出任务（用于前端任务中心侧边栏）。
+
+Response:
+- `200 OK` -> `{ "items": JobRecord[] }`
+
+## DELETE `/api/jobs/{job_id}`
+
+删除任务记录（可选同时清理 artifacts）。
+
+Query:
+- `purge_artifacts` (bool, optional, default `true`)
+
+约束：
+- `queued/running` 任务不可删除，需先取消并等待结束。
+
+行为：
+- 删除 `jobs` 记录。
+- 同时删除该 `job_id` 关联的模型与结果记录（metadata）。
+- `purge_artifacts=true` 时，尝试删除 `backend/artifacts/jobs/{job_id}`。
+
+Response:
+- `200 OK` -> `{ "deleted": true, "removed_models": number, "removed_results": number }`
+- `400 Bad Request` -> `Job is still active...`
+- `404 Not Found` -> `Job not found`

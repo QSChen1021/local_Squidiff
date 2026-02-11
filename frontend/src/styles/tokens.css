@@ -24,7 +24,7 @@ body {
 }
 
 .app-shell {
-  max-width: 980px;
+  max-width: 1280px;
   margin: 0 auto;
   padding: 2rem 1rem 3rem;
   display: grid;
@@ -38,6 +38,161 @@ body {
 
 .app-shell-entered {
   animation: entered-rise 420ms cubic-bezier(0.2, 0.8, 0.22, 1);
+}
+
+.workspace-layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.workspace-main {
+  display: grid;
+  gap: 1rem;
+}
+
+.task-sidebar {
+  position: sticky;
+  top: 1rem;
+  display: grid;
+  gap: 0.65rem;
+  max-height: calc(100vh - 2rem);
+}
+
+.sidebar-block {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.sidebar-block h3 {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #274a56;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.task-sidebar h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.task-sidebar-meta {
+  margin: 0;
+  color: #49656f;
+  font-size: 0.86rem;
+}
+
+.task-sidebar-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.task-sidebar-actions button {
+  width: 100%;
+}
+
+.task-list {
+  display: grid;
+  gap: 0.45rem;
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.task-item {
+  display: grid;
+  gap: 0.2rem;
+  border: 1px solid rgba(15, 108, 130, 0.2);
+  background: #f8fbfc;
+  border-radius: 8px;
+  padding: 0.45rem 0.5rem;
+}
+
+.task-item:hover {
+  border-color: rgba(15, 108, 130, 0.5);
+  background: #eef7fa;
+}
+
+.task-item.active {
+  border-color: #0f6c82;
+  background: #e5f3f7;
+}
+
+.task-item-body {
+  width: 100%;
+  display: grid;
+  gap: 0.2rem;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: #18333d;
+  padding: 0;
+}
+
+.task-item-body-static {
+  cursor: default;
+}
+
+.task-item-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.ghost-mini,
+.danger-mini,
+.anchor-mini {
+  font-size: 0.72rem;
+  border-radius: 6px;
+  padding: 0.2rem 0.5rem;
+}
+
+.ghost-mini {
+  border: 1px solid rgba(15, 108, 130, 0.35);
+  background: #fff;
+  color: #0f6c82;
+}
+
+.danger-mini {
+  border: 1px solid #972026;
+  background: #b4232a;
+  color: #fff;
+}
+
+.anchor-mini {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.task-item-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.task-item-top strong {
+  font-size: 0.82rem;
+  color: #0d566a;
+  text-transform: capitalize;
+}
+
+.task-item-top code {
+  font-size: 0.72rem;
+}
+
+.task-item-id {
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  font-size: 0.72rem;
+  color: #2f4d58;
+  overflow-wrap: anywhere;
+}
+
+.task-item-time {
+  font-size: 0.72rem;
+  color: #5a7680;
 }
 
 @keyframes entered-rise {
@@ -335,6 +490,15 @@ body {
 @media (max-width: 640px) {
   .app-shell {
     padding-top: 1.25rem;
+  }
+
+  .workspace-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .task-sidebar {
+    position: static;
+    max-height: none;
   }
 
   .landing-hero {

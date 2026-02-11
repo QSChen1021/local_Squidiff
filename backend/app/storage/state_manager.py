@@ -86,6 +86,15 @@ class JsonStateStore:
             self._write_all(key, data)
             return record
 
+    def _delete(self, key: str, record_id: str) -> bool:
+        with self._lock:
+            data = self._read_all(key)
+            if record_id not in data:
+                return False
+            del data[record_id]
+            self._write_all(key, data)
+            return True
+
     def create_dataset(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._create("datasets", payload)
 
@@ -112,6 +121,9 @@ class JsonStateStore:
     def update_job(self, job_id: str, patch: dict[str, Any]) -> dict[str, Any] | None:
         return self._update("jobs", job_id, patch)
 
+    def delete_job(self, job_id: str) -> bool:
+        return self._delete("jobs", job_id)
+
     def create_seurat_prepare_job(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._create("seurat_prepare_jobs", payload)
 
@@ -137,6 +149,9 @@ class JsonStateStore:
     def list_models(self) -> list[dict[str, Any]]:
         return self._list("models")
 
+    def delete_model(self, model_id: str) -> bool:
+        return self._delete("models", model_id)
+
     def create_result(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._create("results", payload)
 
@@ -145,3 +160,6 @@ class JsonStateStore:
 
     def list_results(self) -> list[dict[str, Any]]:
         return self._list("results")
+
+    def delete_result(self, result_id: str) -> bool:
+        return self._delete("results", result_id)

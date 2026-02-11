@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ParamTooltip, PARAM_TOOLTIPS } from "./components/ParamTooltip";
 import {
   AuthUser,
@@ -6,13 +6,19 @@ import {
   cancelJob,
   createTrainJob,
   DatasetRecord,
+  deleteJob,
+  deleteModel,
+  deleteResult,
   getCurrentUser,
   getCondaEnvs,
   getGpuStats,
   getHealth,
   getJob,
+  getJobs,
   getJobLog,
   GpuStatsResponse,
+  listModels,
+  listResults,
   loginUser,
   logoutUser,
   getModel,
@@ -52,6 +58,41 @@ function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, value));
 }
 
+const ACTIVE_JOB_STATUS = new Set<JobRecord["status"]>(["queued", "running"]);
+
+function getJobSortTime(job: JobRecord): number {
+  const raw = job.updated_at ?? job.created_at;
+  const parsed = Date.parse(raw);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function sortJobsByRecent(items: JobRecord[]): JobRecord[] {
+  return [...items].sort((a, b) => getJobSortTime(b) - getJobSortTime(a));
+}
+
+function mergeJobsById(current: JobRecord[], incoming: JobRecord[]): JobRecord[] {
+  const merged = new Map<string, JobRecord>();
+  for (const job of current) {
+    merged.set(job.id, job);
+  }
+  for (const job of incoming) {
+    merged.set(job.id, job);
+  }
+  return sortJobsByRecent(Array.from(merged.values()));
+}
+
+function sortByUpdated<T extends { updated_at: string; created_at: string }>(
+  items: T[]
+): T[] {
+  return [...items].sort((a, b) => {
+    const at = Date.parse(a.updated_at ?? a.created_at);
+    const bt = Date.parse(b.updated_at ?? b.created_at);
+    const aa = Number.isNaN(at) ? 0 : at;
+    const bb = Number.isNaN(bt) ? 0 : bt;
+    return bb - aa;
+  });
+}
+
 export function App() {
   const [health, setHealth] = useState("checking");
   const [globalError, setGlobalError] = useState<string | null>(null);
@@ -89,6 +130,10 @@ export function App() {
   const [lr, setLr] = useState<number>(1e-4);
 
   const [job, setJob] = useState<JobRecord | null>(null);
+  const [jobHistory, setJobHistory] = useState<JobRecord[]>([]);
+  const [modelHistory, setModelHistory] = useState<ModelRecord[]>([]);
+  const [resultHistory, setResultHistory] = useState<ResultRecord[]>([]);
+  const [jobHistoryLoading, setJobHistoryLoading] = useState(false);
   const [jobLog, setJobLog] = useState<string>("");
   const [liveJobLog, setLiveJobLog] = useState<string>("");
   const [gpuStats, setGpuStats] = useState<GpuStatsResponse | null>(null);
@@ -100,6 +145,50 @@ export function App() {
   const [cancelBusy, setCancelBusy] = useState(false);
   const [hasEntered, setHasEntered] = useState(false);
   const [selectedMetadataColumn, setSelectedMetadataColumn] = useState<string | null>(null);
+  const jobSessionKey = authUser ? `labflow_last_job_${authUser.id}` : null;
+
+  function resetCurrentJobView(): void {
+    setJob(null);
+    setModel(null);
+    setResult(null);
+    setJobLog("");
+    setLiveJobLog("");
+    setGpuStats(null);
+    setGpuStatsError(null);
+  }
+
+  function onSelectJob(jobItem: JobRecord): void {
+    setJob(jobItem);
+    setModel(null);
+    setResult(null);
+    setJobLog("");
+    setLiveJobLog("");
+    setGlobalError(null);
+  }
+
+  function onStartNewTask(): void {
+    setDatasetFile(null);
+    setSmilesFile(null);
+    setDatasetName("");
+    setUseDrugStructure(false);
+    setDataset(null);
+    setValidation(null);
+    setSeuratInspect(null);
+    setPrepareSummary(null);
+    setGroupColumn("");
+    setClusterColumn("");
+    setSelectedClustersText("");
+    setSelectedMetadataColumn(null);
+    setPrepareSeed(42);
+    setGeneSize(100);
+    setOutputDim(100);
+    setBatchSize(64);
+    setLr(1e-4);
+    resetCurrentJobView();
+    if (jobSessionKey && typeof window !== "undefined") {
+      window.localStorage.removeItem(jobSessionKey);
+    }
+  }
 
   useEffect(() => {
     getHealth()
@@ -159,7 +248,115 @@ export function App() {
       .catch(() => {});
   }, [authUser]);
 
+  const loadJobHistory = useCallback(
+    async (options?: { selectPreferred?: boolean; showLoading?: boolean }) => {
+      const selectPreferred = options?.selectPreferred ?? false;
+      const showLoading = options?.showLoading ?? false;
+
+      if (!authUser) {
+        setJobHistory([]);
+        return;
+      }
+
+      if (showLoading) {
+        setJobHistoryLoading(true);
+      }
+      try {
+        const [jobs, models, results] = await Promise.all([
+          getJobs(),
+          listModels(),
+          listResults()
+        ]);
+        const items = sortJobsByRecent(jobs);
+        setJobHistory(items);
+        setModelHistory(sortByUpdated(models));
+        setResultHistory(sortByUpdated(results));
+
+        setJob((current) => {
+          const matchedCurrent = current
+            ? items.find((item) => item.id === current.id) ?? null
+            : null;
+          if (matchedCurrent) {
+            return matchedCurrent;
+          }
+          if (!selectPreferred) {
+            return current;
+          }
+
+          const storedJobId =
+            jobSessionKey && typeof window !== "undefined"
+              ? window.localStorage.getItem(jobSessionKey)
+              : null;
+          const preferred =
+            (storedJobId ? items.find((item) => item.id === storedJobId) : null) ??
+            items.find((item) => ACTIVE_JOB_STATUS.has(item.status)) ??
+            items[0] ??
+            null;
+          if (preferred) {
+            setHasEntered(true);
+          }
+          return preferred;
+        });
+      } catch (err: unknown) {
+        setGlobalError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (showLoading) {
+          setJobHistoryLoading(false);
+        }
+      }
+    },
+    [authUser, jobSessionKey]
+  );
+  const selectedJobId = job?.id ?? null;
+  const recentJobs = useMemo(() => jobHistory.slice(0, 20), [jobHistory]);
+  const recentModels = useMemo(() => modelHistory.slice(0, 20), [modelHistory]);
+  const recentResults = useMemo(() => resultHistory.slice(0, 20), [resultHistory]);
+
+  useEffect(() => {
+    if (!authUser) {
+      setJobHistory([]);
+      setModelHistory([]);
+      setResultHistory([]);
+      setJob(null);
+      setModel(null);
+      setResult(null);
+      setJobLog("");
+      setLiveJobLog("");
+      setGpuStats(null);
+      setGpuStatsError(null);
+      return;
+    }
+    loadJobHistory({ selectPreferred: true, showLoading: true }).catch(() => {});
+  }, [authUser, loadJobHistory]);
+
+  useEffect(() => {
+    if (!authUser || !hasEntered) {
+      return;
+    }
+    const tick = () => {
+      loadJobHistory({ selectPreferred: false, showLoading: false }).catch(() => {});
+    };
+    tick();
+    const interval = window.setInterval(tick, 5000);
+    return () => window.clearInterval(interval);
+  }, [authUser, hasEntered, job?.id, loadJobHistory]);
+
+  useEffect(() => {
+    if (!jobSessionKey || typeof window === "undefined") {
+      return;
+    }
+    if (!job) {
+      window.localStorage.removeItem(jobSessionKey);
+      return;
+    }
+    window.localStorage.setItem(jobSessionKey, job.id);
+  }, [jobSessionKey, job]);
+
   const canValidate = useMemo(() => dataset !== null, [dataset]);
+  const activeJobs = useMemo(
+    () => jobHistory.filter((item) => ACTIVE_JOB_STATUS.has(item.status)),
+    [jobHistory]
+  );
   const parsedSelectedClusters = useMemo(
     () => parseSelectedClusters(selectedClustersText),
     [selectedClustersText]
@@ -189,6 +386,7 @@ export function App() {
       try {
         const latest = await getJob(job.id);
         setJob(latest);
+        setJobHistory((prev) => mergeJobsById(prev, [latest]));
       } catch (err: unknown) {
         setGlobalError(err instanceof Error ? err.message : String(err));
       }
@@ -432,6 +630,7 @@ export function App() {
         lr
       });
       setJob(newJob);
+      setJobHistory((prev) => mergeJobsById(prev, [newJob]));
       setModel(null);
       setResult(null);
       setJobLog("");
@@ -452,6 +651,7 @@ export function App() {
     try {
       const updated = await cancelJob(job.id);
       setJob(updated);
+      setJobHistory((prev) => mergeJobsById(prev, [updated]));
       const log = await getJobLog(job.id);
       setLiveJobLog(log);
       setJobLog(log);
@@ -508,7 +708,78 @@ export function App() {
       setAuthToken(null);
       setAuthUser(null);
       setHasEntered(false);
+      setJobHistory([]);
+      setModelHistory([]);
+      setResultHistory([]);
+      setJobHistoryLoading(false);
       setAuthBusy(false);
+    }
+  }
+
+  async function onRefreshJobs() {
+    await loadJobHistory({ selectPreferred: false, showLoading: true });
+  }
+
+  async function openJobById(jobId: string) {
+    try {
+      const existing = jobHistory.find((item) => item.id === jobId);
+      if (existing) {
+        onSelectJob(existing);
+        return;
+      }
+      const loaded = await getJob(jobId);
+      onSelectJob(loaded);
+      setJobHistory((prev) => mergeJobsById(prev, [loaded]));
+    } catch (err: unknown) {
+      setGlobalError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function onDeleteJob(jobId: string) {
+    const ok = window.confirm(
+      `Delete task ${jobId}? This will remove task metadata and related artifacts.`
+    );
+    if (!ok) {
+      return;
+    }
+    try {
+      await deleteJob(jobId, true);
+      if (job?.id === jobId) {
+        resetCurrentJobView();
+      }
+      await loadJobHistory({ selectPreferred: false, showLoading: true });
+    } catch (err: unknown) {
+      setGlobalError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function onDeleteModel(modelId: string) {
+    const ok = window.confirm(
+      `Delete model ${modelId}? This will remove the model record and checkpoint file.`
+    );
+    if (!ok) {
+      return;
+    }
+    try {
+      await deleteModel(modelId, true);
+      await loadJobHistory({ selectPreferred: false, showLoading: true });
+    } catch (err: unknown) {
+      setGlobalError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function onDeleteResult(resultId: string) {
+    const ok = window.confirm(
+      `Delete result ${resultId}? This will remove result metadata and report files.`
+    );
+    if (!ok) {
+      return;
+    }
+    try {
+      await deleteResult(resultId, true);
+      await loadJobHistory({ selectPreferred: false, showLoading: true });
+    } catch (err: unknown) {
+      setGlobalError(err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -644,7 +915,151 @@ export function App() {
           {globalError ? <p className="error">{globalError}</p> : null}
         </section>
       ) : (
-        <>
+        <div className="workspace-layout">
+      <aside className="panel task-sidebar">
+        <h2>Task Center</h2>
+        <p className="task-sidebar-meta">
+          {jobHistoryLoading
+            ? "syncing..."
+            : `active ${activeJobs.length} / total ${jobHistory.length}`}
+        </p>
+        <div className="task-sidebar-actions">
+          <button type="button" onClick={onStartNewTask} disabled={busyStep !== null}>
+            New task
+          </button>
+          <button type="button" className="auth-ghost-btn" onClick={onRefreshJobs}>
+            Refresh
+          </button>
+        </div>
+
+        <section className="sidebar-block" aria-label="tasks">
+          <h3>Jobs</h3>
+          <div className="task-list">
+            {recentJobs.length > 0 ? (
+              recentJobs.map((item) => (
+                <div
+                  key={item.id}
+                  className={`task-item ${selectedJobId === item.id ? "active" : ""}`}
+                >
+                  <button type="button" className="task-item-body" onClick={() => onSelectJob(item)}>
+                    <span className="task-item-top">
+                      <strong>{item.type}</strong>
+                      <code>{item.status}</code>
+                    </span>
+                    <span className="task-item-id">{item.id}</span>
+                    <span className="task-item-time">{formatTime(item.updated_at)}</span>
+                  </button>
+                  <div className="task-item-actions">
+                    <button type="button" className="ghost-mini" onClick={() => onSelectJob(item)}>
+                      Open
+                    </button>
+                    <button
+                      type="button"
+                      className="danger-mini"
+                      onClick={() => onDeleteJob(item.id)}
+                      disabled={ACTIVE_JOB_STATUS.has(item.status)}
+                      title={
+                        ACTIVE_JOB_STATUS.has(item.status)
+                          ? "Cancel running job before deleting"
+                          : "Delete job"
+                      }
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="hint">No tasks yet.</p>
+            )}
+          </div>
+        </section>
+
+        <section className="sidebar-block" aria-label="models">
+          <h3>Models</h3>
+          <div className="task-list">
+            {recentModels.length > 0 ? (
+              recentModels.map((item) => (
+                <div key={item.id} className="task-item">
+                  <div className="task-item-body task-item-body-static">
+                    <span className="task-item-top">
+                      <strong>model</strong>
+                      <code>{item.id.slice(0, 8)}</code>
+                    </span>
+                    <span className="task-item-id">{item.path_ckpt}</span>
+                    <span className="task-item-time">{formatTime(item.updated_at)}</span>
+                  </div>
+                  <div className="task-item-actions">
+                    <button type="button" className="ghost-mini" onClick={() => openJobById(item.job_id)}>
+                      Job
+                    </button>
+                    <a
+                      className="ghost-mini anchor-mini"
+                      href={buildApiUrl(`/api/results/models/${item.id}/download`)}
+                    >
+                      Download
+                    </a>
+                    <button type="button" className="danger-mini" onClick={() => onDeleteModel(item.id)}>
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="hint">No models yet.</p>
+            )}
+          </div>
+        </section>
+
+        <section className="sidebar-block" aria-label="results">
+          <h3>Reports</h3>
+          <div className="task-list">
+            {recentResults.length > 0 ? (
+              recentResults.map((item) => {
+                const summaryAsset =
+                  item.summary.assets.find((asset) => asset.name === "summary.json") ??
+                  item.summary.assets[0] ??
+                  null;
+                return (
+                  <div key={item.id} className="task-item">
+                    <div className="task-item-body task-item-body-static">
+                      <span className="task-item-top">
+                        <strong>result</strong>
+                        <code>{item.id.slice(0, 8)}</code>
+                      </span>
+                      <span className="task-item-id">{item.artifact_dir}</span>
+                      <span className="task-item-time">{formatTime(item.updated_at)}</span>
+                    </div>
+                    <div className="task-item-actions">
+                      <button
+                        type="button"
+                        className="ghost-mini"
+                        onClick={() => openJobById(item.job_id)}
+                      >
+                        Job
+                      </button>
+                      {summaryAsset ? (
+                        <a
+                          className="ghost-mini anchor-mini"
+                          href={buildApiUrl(summaryAsset.url)}
+                        >
+                          Download
+                        </a>
+                      ) : null}
+                      <button type="button" className="danger-mini" onClick={() => onDeleteResult(item.id)}>
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <p className="hint">No reports yet.</p>
+            )}
+          </div>
+        </section>
+      </aside>
+      <div className="workspace-main">
       <header className="hero">
         <h1>Squidiff LabFlow MVP</h1>
         <p>上传 → 校验 → Seurat 检查 → 500x500 预处理 → 训练任务 → 结果页</p>
@@ -1250,7 +1665,8 @@ export function App() {
           <p>训练完成后会显示模型与结果信息。</p>
         )}
       </section>
-        </>
+      </div>
+      </div>
       )}
     </main>
   );

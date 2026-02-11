@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+import shutil
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from ..core.config import settings
@@ -51,6 +52,18 @@ def _latest_prepared_dataset(source_dataset_id: str) -> dict[str, object] | None
 @router.get("")
 async def list_jobs() -> dict[str, object]:
     return {"items": store.list_jobs()}
+
+
+def _remove_tree_if_allowed(path: Path) -> None:
+    try:
+        root = settings.artifact_dir.resolve()
+        target = path.resolve()
+    except OSError:
+        return
+    if root not in target.parents and root != target:
+        return
+    if target.exists() and target.is_dir():
+        shutil.rmtree(target, ignore_errors=True)
 
 
 @router.get("/{job_id}")
@@ -130,6 +143,52 @@ async def cancel_job(job_id: str) -> dict[str, object]:
     if updated is None:
         raise HTTPException(status_code=404, detail="Job not found")
     return {"job": updated}
+
+
+@router.delete("/{job_id}")
+async def delete_job(
+    job_id: str,
+    purge_artifacts: bool = Query(
+        True,
+        description="If true, also remove related files under backend/artifacts/jobs/{job_id}",
+    ),
+) -> dict[str, object]:
+    job = store.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.get("status") in {"queued", "running"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Job is still active. Cancel and wait until it stops before deleting.",
+        )
+
+    related_model_ids = [
+        str(model.get("id"))
+        for model in store.list_models()
+        if model.get("job_id") == job_id and model.get("id")
+    ]
+    related_result_ids = [
+        str(result.get("id"))
+        for result in store.list_results()
+        if result.get("job_id") == job_id and result.get("id")
+    ]
+
+    for model_id in related_model_ids:
+        store.delete_model(model_id)
+    for result_id in related_result_ids:
+        store.delete_result(result_id)
+
+    store.delete_job(job_id)
+
+    if purge_artifacts:
+        _remove_tree_if_allowed(settings.artifact_dir / "jobs" / job_id)
+
+    return {
+        "deleted": True,
+        "removed_models": len(related_model_ids),
+        "removed_results": len(related_result_ids),
+    }
 
 
 @router.post("/train")
