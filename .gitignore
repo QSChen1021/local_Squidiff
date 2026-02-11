@@ -128,7 +128,6 @@ frontend/dist/
 .uv-cache/
 tmp_cache/
 _pycache__/
-_pycache__/
 
 # Local env files (keep templates)
 .env
